@@ -3,7 +3,7 @@
   "label": "Honcho",
   "description": "Honcho memory dashboard — peers, sessions, conclusions, and messages.",
   "icon": "Brain",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "dist/index.js",
   "tab": {
     "path": "/honcho",

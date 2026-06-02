@@ -1,8 +1,9 @@
 /**
  * Honcho Dashboard — Hermes Dashboard Plugin
  *
- * Four tabs: Overview, Peers, Sessions, Conclusions.
- * Each conclusion links back to its source chat via "Jump to Chat".
+ * Tabs: Overview, Peers, Sessions, Conclusions, Search, Analytics, Status.
+ * Features: sidebar nav, back-button nav stack, peer drill-down,
+ *   vector search, analytics charts, queue status, add insight.
  */
 (function () {
   "use strict";
@@ -14,9 +15,12 @@
   var h = React.createElement;
   var useState = SDK.hooks.useState;
   var useEffect = SDK.hooks.useEffect;
-  var useRef = SDK.hooks.useRef;
 
   var API = "/api/plugins/honcho-dashboard";
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   function fetchJSON(url) {
     var token = window.__HERMES_SESSION_TOKEN__ || "";
@@ -41,32 +45,143 @@
     return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  function fmtDate(iso) {
+    if (!iso) return "unknown";
+    var d = new Date(iso);
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function truncate(str, len) {
+    if (!str) return "";
+    return str.length > len ? str.slice(0, len) + "…" : str;
+  }
+
   // ---------------------------------------------------------------------------
-  // Tab button
+  // Styles
+  // ---------------------------------------------------------------------------
+
+  var S = {
+    // Layout
+    page: { height: "100%", display: "flex", flexDirection: "column" },
+    header: {
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "12px 24px", borderBottom: "1px solid #30363d",
+      background: "#161b22",
+    },
+    headerTitle: { fontSize: "1.1em", fontWeight: 600, color: "#c9d1d9" },
+    tabs: { display: "flex", borderBottom: "1px solid #30363d", padding: "0 24px", gap: 4, background: "#161b22" },
+    body: { flex: 1, overflowY: "auto", padding: "24px", background: "#0d1117" },
+
+    // Tab button
+    tabBtn: function (active) {
+      return {
+        padding: "8px 16px", border: "none",
+        borderBottom: active ? "2px solid #58a6ff" : "2px solid transparent",
+        background: "transparent", color: active ? "#58a6ff" : "#8b949e",
+        cursor: "pointer", fontSize: "0.88em", fontWeight: active ? 600 : 400,
+      };
+    },
+
+    // Cards
+    card: {
+      background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
+      padding: "14px 16px", marginBottom: 10, cursor: "pointer",
+    },
+    cardStatic: {
+      background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
+      padding: "14px 16px", marginBottom: 10,
+    },
+    cardSelected: { border: "1px solid #58a6ff" },
+
+    // Stat cards
+    statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 },
+    statCard: {
+      background: "#161b22", border: "1px solid #30363d", borderRadius: 10,
+      padding: "20px", textAlign: "center",
+    },
+    statNumber: { fontSize: "2em", fontWeight: 700, color: "#58a6ff", marginBottom: 4 },
+    statLabel: { fontSize: "0.82em", color: "#8b949e" },
+
+    // Section
+    section: { marginBottom: 28 },
+    sectionTitle: { fontSize: "1.1em", fontWeight: 600, marginBottom: 12, color: "#c9d1d9" },
+
+    // Text
+    mono: { fontFamily: "monospace", fontSize: "0.85em" },
+    small: { fontSize: "0.78em", color: "#8b949e" },
+    text: { fontSize: "0.88em", lineHeight: 1.5 },
+    textSmall: { fontSize: "0.82em", lineHeight: 1.5 },
+
+    // Inputs
+    input: {
+      padding: "6px 12px", background: "#0d1117", border: "1px solid #30363d",
+      borderRadius: 6, color: "#c9d1d9", fontSize: "0.85em", width: "300px",
+    },
+    textarea: {
+      width: "100%", padding: "8px 12px", background: "#0d1117",
+      border: "1px solid #30363d", borderRadius: 6, color: "#c9d1d9",
+      fontSize: "0.85em", minHeight: "80px", resize: "vertical", boxSizing: "border-box",
+    },
+
+    // Buttons
+    btn: {
+      background: "#21262d", border: "1px solid #30363d", borderRadius: 6,
+      color: "#c9d1d9", cursor: "pointer", fontSize: "0.82em", padding: "4px 12px",
+    },
+    btnPrimary: {
+      background: "#238636", border: "1px solid #2ea043", borderRadius: 6,
+      color: "#fff", cursor: "pointer", fontSize: "0.82em", padding: "6px 14px",
+    },
+    btnSmall: {
+      background: "none", border: "1px solid #30363d", borderRadius: 4,
+      color: "#58a6ff", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
+    },
+    btnBack: {
+      background: "none", border: "1px solid #30363d", borderRadius: 4,
+      color: "#8b949e", cursor: "pointer", fontSize: "0.82em", padding: "4px 10px",
+      marginRight: 8,
+    },
+
+    // Status
+    ok: { color: "#3fb950" },
+    bad: { color: "#f85149" },
+    warn: { color: "#d29922" },
+
+    // Bar chart
+    barChart: { display: "flex", alignItems: "flex-end", gap: 4, height: "160px", padding: "10px 0" },
+    barCol: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" },
+    bar: { width: "100%", background: "#58a6ff", borderRadius: "3px 3px 0 0", minHeight: 4 },
+    barSecondary: { background: "#a371f7" },
+    barVal: { fontSize: "0.65em", color: "#8b949e", marginTop: 2 },
+
+    // Queue
+    queueRow: { marginBottom: 12 },
+    queueBarBg: { background: "#21262d", borderRadius: 4, height: 8, width: "100%", marginTop: 4 },
+    queueBarFill: { height: "100%", borderRadius: 4 },
+    queuePct: { fontSize: "0.75em", color: "#8b949e", marginLeft: 8 },
+
+    // Insight
+    insightBox: {
+      background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
+      padding: "14px 16px", marginBottom: 16,
+    },
+    insightLabel: { color: "#8b949e", fontSize: "0.8rem", marginBottom: "0.5rem" },
+
+    // Two-pane
+    twoPane: { display: "flex", gap: 24 },
+    leftPane: { flex: "0 0 340px", overflowY: "auto", maxHeight: "calc(100vh - 200px)" },
+    rightPane: { flex: 1, overflowY: "auto", maxHeight: "calc(100vh - 200px)" },
+  };
+
+  // ---------------------------------------------------------------------------
+  // Tab Button
   // ---------------------------------------------------------------------------
 
   function TabBtn(props) {
-    var active = props.active;
-    var label = props.label;
-    var icon = props.icon;
-    var onClick = props.onClick;
-    return h(
-      "button",
-      {
-        onClick: onClick,
-        style: {
-          padding: "8px 16px",
-          border: "none",
-          borderBottom: active ? "2px solid #58a6ff" : "2px solid transparent",
-          background: "transparent",
-          color: active ? "#58a6ff" : "#8b949e",
-          cursor: "pointer",
-          fontSize: "0.88em",
-          fontWeight: active ? 600 : 400,
-        },
-      },
-      icon + " " + label
-    );
+    return h("button", {
+      onClick: props.onClick,
+      style: S.tabBtn(props.active),
+    }, (props.icon ? props.icon + " " : "") + props.label);
   }
 
   // ---------------------------------------------------------------------------
@@ -74,12 +189,9 @@
   // ---------------------------------------------------------------------------
 
   function OverviewTab() {
-    var _useState = useState(null);
-    var data = _useState[0], setData = _useState[1];
-    var _useState2 = useState(true);
-    var loading = _useState2[0], setLoading = _useState2[1];
-    var _useState3 = useState(null);
-    var error = _useState3[0], setError = _useState3[1];
+    var _u = useState(null), data = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
 
     useEffect(function () {
       setLoading(true);
@@ -90,54 +202,23 @@
     }, []);
 
     if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading…");
-    if (error) return h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ " + error);
+    if (error) return h("div", { style: { padding: 40, color: "#f85149" }, }, "⚠️ " + error);
     if (!data) return null;
 
-    var S = {
-      grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 32 },
-      statCard: {
-        background: "#161b22", border: "1px solid #30363d", borderRadius: 10, padding: "20px",
-        textAlign: "center",
-      },
-      statNumber: { fontSize: "2em", fontWeight: 700, color: "#58a6ff", marginBottom: 4 },
-      statLabel: { fontSize: "0.82em", color: "#8b949e" },
-      section: { marginBottom: 28 },
-      sectionTitle: { fontSize: "1.1em", fontWeight: 600, marginBottom: 12, color: "#c9d1d9" },
-      conclusionCard: {
-        background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
-        padding: "14px 16px", marginBottom: 10,
-      },
-      conclusionText: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 6 },
-      conclusionMeta: { fontSize: "0.75em", color: "#8b949e" },
-    };
-
     return h("div", null,
-      h("div", { style: S.grid },
-        h("div", { style: S.statCard },
-          h("div", { style: S.statNumber }, String(data.peers.total)),
-          h("div", { style: S.statLabel }, "Peers")
-        ),
-        h("div", { style: S.statCard },
-          h("div", { style: S.statNumber }, String(data.sessions.total)),
-          h("div", { style: S.statLabel }, "Sessions")
-        ),
-        h("div", { style: S.statCard },
-          h("div", { style: S.statNumber }, String(data.conclusions.total)),
-          h("div", { style: S.statLabel }, "Conclusions")
-        ),
-        h("div", { style: S.statCard },
-          h("div", { style: S.statNumber }, String(data.messages_sampled)),
-          h("div", { style: S.statLabel }, "Messages (sampled)")
-        ),
+      h("div", { style: S.statGrid },
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.peers.total)), h("div", { style: S.statLabel }, "Peers")),
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.sessions.total)), h("div", { style: S.statLabel }, "Sessions")),
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.conclusions.total)), h("div", { style: S.statLabel }, "Conclusions")),
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.messages_sampled)), h("div", { style: S.statLabel }, "Messages (sampled)")),
       ),
-
       h("div", { style: S.section },
         h("div", { style: S.sectionTitle }, "📜 Recent Conclusions"),
         data.conclusions.recent && data.conclusions.recent.length > 0
           ? data.conclusions.recent.map(function (c, i) {
-              return h("div", { key: c.id || String(i), style: S.conclusionCard },
-                h("div", { style: S.conclusionText }, c.content || ""),
-                h("div", { style: S.conclusionMeta },
+              return h("div", { key: c.id || String(i), style: S.cardStatic },
+                h("div", { style: S.text }, c.content || ""),
+                h("div", { style: S.small },
                   (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
                 )
               );
@@ -152,12 +233,9 @@
   // ---------------------------------------------------------------------------
 
   function PeersTab() {
-    var _useState = useState([]);
-    var peers = _useState[0], setPeers = _useState[1];
-    var _useState2 = useState(true);
-    var loading = _useState2[0], setLoading = _useState2[1];
-    var _useState3 = useState(null);
-    var selectedPeer = _useState3[0], setSelectedPeer = _useState3[1];
+    var _u = useState([]), peers = _u[0], setPeers = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), selectedPeer = _u3[0], setSelectedPeer = _u3[1];
 
     useEffect(function () {
       fetchJSON(API + "/peers")
@@ -166,42 +244,43 @@
         .finally(function () { setLoading(false); });
     }, []);
 
-    var S = { card: { background: "#161b22", border: "1px solid #30363d", borderRadius: 8, padding: "14px 16px", marginBottom: 10, cursor: "pointer" }, name: { fontWeight: 600, fontSize: "0.95em", marginBottom: 4 }, meta: { fontSize: "0.78em", color: "#8b949e" } };
-
-    return h("div", null,
-      h("div", { style: { display: "flex", gap: 24 } },
-        h("div", { style: { flex: "0 0 340px", overflowY: "auto", maxHeight: "calc(100vh - 200px)" } },
-          loading
-            ? h("div", { style: { color: "#8b949e" } }, "Loading…")
-            : peers.map(function (p) {
-                return h("div", {
-                    key: p.id,
-                    style: Object.assign({}, S.card, { border: selectedPeer === p.id ? "1px solid #58a6ff" : "1px solid #30363d" }),
-                    onClick: function () { setSelectedPeer(selectedPeer === p.id ? null : p.id); },
-                  },
-                  h("div", { style: S.name }, p.metadata && p.metadata.name ? p.metadata.name : p.id),
-                  h("div", { style: S.meta },
-                    "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
-                    " · By: ", h("strong", null, String(p.conclusions_by || 0))
-                  )
-                );
-              })
-        ),
-        h("div", { style: { flex: 1, overflowY: "auto", maxHeight: "calc(100vh - 200px)" } },
-          selectedPeer
-            ? h(PeerDetail, { peerId: selectedPeer })
-            : h("div", { style: { color: "#8b949e", padding: 40, textAlign: "center" } }, "Select a peer to view details")
-        )
+    return h("div", { style: S.twoPane },
+      h("div", { style: S.leftPane },
+        loading
+          ? h("div", { style: { color: "#8b949e" } }, "Loading…")
+          : peers.map(function (p) {
+              var isSelected = selectedPeer === p.id;
+              return h("div", {
+                  key: p.id,
+                  style: Object.assign({}, S.card, isSelected ? S.cardSelected : {}),
+                  onClick: function () { setSelectedPeer(isSelected ? null : p.id); },
+                },
+                h("div", { style: { fontWeight: 600, fontSize: "0.95em", marginBottom: 4 } },
+                  p.metadata && p.metadata.name ? p.metadata.name : p.id
+                ),
+                h("div", { style: S.small },
+                  "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
+                  " · By: ", h("strong", null, String(p.conclusions_by || 0))
+                )
+              );
+            })
+      ),
+      h("div", { style: S.rightPane },
+        selectedPeer
+          ? h(PeerDetail, { peerId: selectedPeer })
+          : h("div", { style: { color: "#8b949e", padding: 40, textAlign: "center" } }, "👈 Select a peer to view details")
       )
     );
   }
 
   function PeerDetail(props) {
     var peerId = props.peerId;
-    var _useState = useState(null);
-    var data = _useState[0], setData = _useState[1];
-    var _useState2 = useState(true);
-    var loading = _useState2[0], setLoading = _useState2[1];
+    var _u = useState(null), data = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState([]), sessions = _u3[0], setSessions = _u3[1];
+    var _u4 = useState(true), sessionsLoading = _u4[0], setSessionsLoading = _u4[1];
+    var _u5 = useState(false), showInsight = _u5[0], setShowInsight = _u5[1];
+    var _u6 = useState(""), insightText = _u6[0], setInsightText = _u6[1];
 
     useEffect(function () {
       setLoading(true);
@@ -211,17 +290,84 @@
         .finally(function () { setLoading(false); });
     }, [peerId]);
 
-    if (loading) return h("div", { style: { color: "#8b949e", padding: 20 } }, "Loading conclusions…");
-    if (!data) return null;
+    useEffect(function () {
+      setSessionsLoading(true);
+      fetchJSON(API + "/peer/" + encodeURIComponent(peerId) + "/sessions")
+        .then(function (d) { setSessions(d.sessions || []); })
+        .catch(function () {})
+        .finally(function () { setSessionsLoading(false); });
+    }, [peerId]);
 
-    var items = data.items || [];
+    function submitInsight() {
+      if (!insightText.trim()) return;
+      fetch(API + "/peer/" + encodeURIComponent(peerId) + "/insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: insightText }),
+      })
+        .then(function () { setInsightText(""); setShowInsight(false); })
+        .catch(function () {});
+    }
+
+    var conclusions = (data && data.items) || [];
+
     return h("div", null,
-      h("h3", { style: { marginBottom: 16 } }, "Conclusions about ", h("code", null, peerId)),
-      items.length === 0
-        ? h("div", { style: { color: "#8b949e" } }, "No conclusions yet.")
-        : items.map(function (c, i) {
-            return h(ConclusionCard, { key: c.id || String(i), conclusion: c });
-          })
+      h("h3", { style: { marginBottom: 16 } }, "Peer: ", h("code", null, peerId)),
+
+      // Sessions section
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "💬 Sessions (", sessions.length, ")"),
+        sessionsLoading
+          ? h("div", { style: { color: "#8b949e", fontSize: "0.82em" } }, "Loading…")
+          : sessions.length === 0
+          ? h("div", { style: { color: "#8b949e", fontSize: "0.82em" } }, "No sessions for this peer.")
+          : sessions.map(function (s) {
+              return h("div", { key: s.id, style: Object.assign({}, S.cardStatic, { cursor: "default" }) },
+                h("div", { style: S.mono }, s.id),
+                h("div", { style: S.small }, "Created: ", fmtDate(s.created_at), s.is_active ? " · Active" : "")
+              );
+            })
+      ),
+
+      // Add Insight
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle },
+          "🧠 Conclusions (", conclusions.length, ")",
+          h("button", {
+            onClick: function () { setShowInsight(!showInsight); },
+            style: Object.assign({}, S.btnPrimary, { marginLeft: 12 }),
+          }, showInsight ? "Cancel" : "➕ Add Insight"),
+        ),
+
+        showInsight
+          ? h("div", { style: S.insightBox },
+              h("div", { style: S.insightLabel },
+                "Submit an observation about ", h("strong", null, peerId), ". Honcho will process it and may derive new conclusions if it contains meaningful, novel insights."
+              ),
+              h("textarea", {
+                style: S.textarea,
+                rows: 3,
+                placeholder: "e.g. Kit prefers concise emails with only filled-in fields — no empty TBC fields",
+                value: insightText,
+                onChange: function (e) { setInsightText(e.target.value); },
+              }),
+              h("button", { onClick: submitInsight, style: Object.assign({}, S.btnPrimary, { marginTop: 8 }) }, "⚡ Submit Insight")
+            )
+          : null,
+
+        loading
+          ? h("div", { style: { color: "#8b949e", padding: 20 } }, "Loading conclusions…")
+          : conclusions.length === 0
+          ? h("div", { style: { color: "#8b949e" } }, "No conclusions yet.")
+          : conclusions.map(function (c, i) {
+              return h("div", { key: c.id || String(i), style: S.cardStatic },
+                h("div", { style: S.text }, c.content || ""),
+                h("div", { style: S.small },
+                  (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
+                )
+              );
+            })
+      )
     );
   }
 
@@ -230,12 +376,9 @@
   // ---------------------------------------------------------------------------
 
   function SessionsTab() {
-    var _useState = useState([]);
-    var sessions = _useState[0], setSessions = _useState[1];
-    var _useState2 = useState(true);
-    var loading = _useState2[0], setLoading = _useState2[1];
-    var _useState3 = useState(null);
-    var expanded = _useState3[0], setExpanded = _useState3[1];
+    var _u = useState([]), sessions = _u[0], setSessions = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), expanded = _u3[0], setExpanded = _u3[1];
 
     useEffect(function () {
       fetchJSON(API + "/sessions")
@@ -244,9 +387,10 @@
         .finally(function () { setLoading(false); });
     }, []);
 
-    var S = { card: { background: "#161b22", border: "1px solid #30363d", borderRadius: 8, padding: "14px 16px", marginBottom: 8, cursor: "pointer" }, id: { fontFamily: "monospace", fontSize: "0.85em", marginBottom: 4 }, meta: { fontSize: "0.75em", color: "#8b949e" } };
-
     return h("div", null,
+      h("div", { style: { fontWeight: 600, marginBottom: 14 } },
+        "All Sessions (", sessions.length, ")"
+      ),
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
         : sessions.length === 0
@@ -254,13 +398,13 @@
         : sessions.map(function (s) {
             return h("div", null,
               h("div", {
-                  key: s.id,
-                  style: S.card,
+                  key: s.id, style: S.card,
                   onClick: function () { setExpanded(expanded === s.id ? null : s.id); },
                 },
-                h("div", { style: S.id }, s.id),
-                h("div", { style: S.meta },
-                  "Created: " + timeAgo(s.created_at) + (s.is_active ? " · Active" : "")
+                h("div", { style: S.mono }, s.id),
+                h("div", { style: S.small },
+                  "Created: ", fmtDate(s.created_at), s.is_active ? " · Active" : "",
+                  expanded === s.id ? " ▾" : " ▸"
                 )
               ),
               expanded === s.id ? h(SessionMessages, { sessionId: s.id }) : null
@@ -271,10 +415,8 @@
 
   function SessionMessages(props) {
     var sessionId = props.sessionId;
-    var _useState = useState(null);
-    var data = _useState[0], setData = _useState[1];
-    var _useState2 = useState(true);
-    var loading = _useState2[0], setLoading = _useState2[1];
+    var _u = useState(null), data = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
 
     useEffect(function () {
       fetchJSON(API + "/session/" + encodeURIComponent(sessionId) + "/messages?limit=50")
@@ -287,17 +429,17 @@
     if (!data) return null;
 
     var items = data.items || [];
+    if (items.length === 0) return h("div", { style: { color: "#8b949e", fontSize: "0.82em", padding: "8px 16px" } }, "No messages.");
+
     return h("div", { style: { margin: "0 0 12px 16px", borderLeft: "2px solid #30363d", paddingLeft: 12 } },
-      items.length === 0
-        ? h("div", { style: { color: "#8b949e", fontSize: "0.82em", padding: "8px 0" } }, "No messages.")
-        : items.map(function (m, i) {
-            var peer = m.peer_id || m.from || "?";
-            var text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
-            return h("div", { key: m.id || String(i), style: { padding: "6px 0", fontSize: "0.82em", borderBottom: "1px solid #21262d" } },
-              h("span", { style: { color: "#58a6ff", marginRight: 8 } }, "[" + peer + "]"),
-              h("span", { style: { color: "#c9d1d9" } }, text.slice(0, 200))
-            );
-          })
+      items.map(function (m, i) {
+        var peer = m.peer_id || m.from || "?";
+        var text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+        return h("div", { key: m.id || String(i), style: { padding: "6px 0", fontSize: "0.82em", borderBottom: "1px solid #21262d" } },
+          h("span", { style: { color: "#58a6ff", marginRight: 8 } }, "[" + peer + "]"),
+          h("span", { style: { color: "#c9d1d9" } }, truncate(text, 300))
+        );
+      })
     );
   }
 
@@ -306,12 +448,9 @@
   // ---------------------------------------------------------------------------
 
   function ConclusionsTab() {
-    var _useState = useState([]);
-    var conclusions = _useState[0], setData = _useState[1];
-    var _useState2 = useState(true);
-    var loading = _useState2[0], setLoading = _useState2[1];
-    var _useState3 = useState("");
-    var filter = _useState3[0], setFilter = _useState3[1];
+    var _u = useState([]), conclusions = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(""), filter = _u3[0], setFilter = _u3[1];
 
     useEffect(function () {
       var url = API + "/conclusions?limit=100";
@@ -323,52 +462,249 @@
     }, [filter]);
 
     return h("div", null,
-      h("div", { style: { marginBottom: 16 } },
+      h("div", { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
         h("input", {
-          style: { padding: "6px 12px", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, color: "#c9d1d9", fontSize: "0.85em", width: "300px" },
+          style: S.input,
           placeholder: "Filter by peer ID…",
           value: filter,
           onChange: function (e) { setFilter(e.target.value); },
-        })
+        }),
+        filter ? h("button", { onClick: function () { setFilter(""); }, style: S.btn }, "✕ Clear") : null
       ),
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
         : conclusions.length === 0
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No conclusions found.")
-        : conclusions.map(function (c, i) { return h(ConclusionCard, { key: c.id || String(i), conclusion: c }); })
+        : conclusions.map(function (c, i) {
+            return h("div", { key: c.id || String(i), style: S.cardStatic },
+              h("div", { style: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 8 } }, c.content || ""),
+              h("div", { style: { fontSize: "0.75em", color: "#8b949e", display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                h("span", null,
+                  (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
+                )
+              )
+            );
+          })
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Conclusion Card (shared)
+  // Search Tab
   // ---------------------------------------------------------------------------
 
-  function ConclusionCard(props) {
-    var c = props.conclusion;
-    var _useState = useState(false);
-    var expanded = _useState[0], setExpanded = _useState[1];
+  function SearchTab() {
+    var _u = useState(""), query = _u[0], setQuery = _u[1];
+    var _u2 = useState(null), results = _u2[0], setResults = _u2[1];
+    var _u3 = useState(false), loading = _u3[0], setLoading = _u3[1];
+    var _u4 = useState(null), error = _u4[0], setError = _u4[1];
 
-    return h("div", {
-        style: {
-          background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
-          padding: "14px 16px", marginBottom: 10,
-        }
-      },
-      h("div", { style: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 8 } }, c.content || ""),
-      h("div", { style: { fontSize: "0.75em", color: "#8b949e", display: "flex", justifyContent: "space-between", alignItems: "center" } },
-        h("span", null,
-          (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
-        ),
-        c.session_id
-          ? h("button", {
-              onClick: function () { setExpanded(!expanded); },
-              style: { background: "none", border: "1px solid #30363d", borderRadius: 4, color: "#58a6ff", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px" },
-            }, expanded ? "Hide Source" : "Jump to Chat")
-          : null
+    function doSearch() {
+      if (!query.trim()) return;
+      setLoading(true);
+      setError(null);
+      fetchJSON(API + "/search?q=" + encodeURIComponent(query) + "&limit=20")
+        .then(function (d) { setResults(d); })
+        .catch(function (e) { setError(e.message); })
+        .finally(function () { setLoading(false); });
+    }
+
+    var items = results ? (results.items || results || []) : [];
+    if (results && results.error) error = results.error;
+    if (results && results.detail) error = results.detail;
+
+    return h("div", null,
+      h("div", { style: { marginBottom: 16, display: "flex", gap: 8 } },
+        h("input", {
+          style: Object.assign({}, S.input, { width: "400px" }),
+          placeholder: "Search messages across all peers…",
+          value: query,
+          onChange: function (e) { setQuery(e.target.value); },
+          onKeyPress: function (e) { if (e.key === "Enter") doSearch(); },
+        }),
+        h("button", { onClick: doSearch, style: S.btnPrimary }, "Search")
       ),
-      expanded && c.session_id
-        ? h(SessionMessages, { sessionId: c.session_id })
-        : null
+      loading
+        ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Searching…")
+        : error
+        ? h("div", { style: { color: "#f85149", padding: 20 } }, "⚠️ ", error)
+        : results && items.length === 0
+        ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No results found.")
+        : results
+        ? h("div", null,
+            h("div", { style: { marginBottom: 12, color: "#8b949e", fontSize: "0.82em" } }, items.length, " results for \"", query, "\""),
+            items.map(function (r, i) {
+              var content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
+              return h("div", { key: String(i), style: S.cardStatic },
+                h("div", { style: { marginBottom: 4 } },
+                  h("span", { style: { color: "#58a6ff", fontSize: "0.78em", marginRight: 8 } },
+                    r.session_id ? "[" + truncate(r.session_id, 40) + "]" : ""
+                  ),
+                  r.peer_id ? h("span", { style: { color: "#a371f7", fontSize: "0.78em" } }, r.peer_id) : null
+                ),
+                h("div", { style: S.textSmall }, truncate(content, 300))
+              );
+            })
+          )
+        : h("div", { style: { color: "#8b949e", padding: 40 } }, "Enter a search query to find messages across all sessions.")
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Analytics Tab
+  // ---------------------------------------------------------------------------
+
+  function AnalyticsTab() {
+    var _u = useState(null), data = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
+
+    useEffect(function () {
+      setLoading(true);
+      fetchJSON(API + "/analytics")
+        .then(function (d) { setData(d); setError(null); })
+        .catch(function (e) { setError(e.message); })
+        .finally(function () { setLoading(false); });
+    }, []);
+
+    if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading analytics…");
+    if (error) return h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ " + error);
+    if (!data) return null;
+
+    var days = data.days || [];
+    var msgByDay = data.messages_by_day || {};
+    var concByDay = data.conclusions_by_day || {};
+    var maxMsgs = Math.max.apply(null, days.map(function (d) { return msgByDay[d] || 0; }).concat([1]));
+    var maxConcs = Math.max.apply(null, days.map(function (d) { return concByDay[d] || 0; }).concat([1]));
+
+    function dayLabel(d) {
+      var dt = new Date(d + "T00:00:00");
+      return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    }
+
+    return h("div", null,
+      h("h2", { style: { marginBottom: 16 } }, "Analytics (last 14 days)"),
+      h("div", { style: S.statGrid },
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_sessions)), h("div", { style: S.statLabel }, "Total Sessions")),
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_messages)), h("div", { style: S.statLabel }, "Total Messages")),
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_conclusions)), h("div", { style: S.statLabel }, "Total Conclusions")),
+        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_peers)), h("div", { style: S.statLabel }, "Peers")),
+      ),
+      h("div", { style: S.cardStatic },
+        h("h3", { style: { marginBottom: 8 } }, "📨 Messages per Day"),
+        h("div", { style: S.barChart },
+          days.map(function (d) {
+            var count = msgByDay[d] || 0;
+            var h = Math.round((count / maxMsgs) * 120);
+            return h("div", { key: d, style: S.barCol },
+              h("div", { style: Object.assign({}, S.bar, { height: h + "px" }), title: count + " messages on " + d }),
+              h("small", null, dayLabel(d)),
+              h("small", { style: S.barVal }, String(count))
+            );
+          })
+        )
+      ),
+      h("div", { style: Object.assign({}, S.cardStatic, { marginTop: 16 }) },
+        h("h3", { style: { marginBottom: 8 } }, "🧠 Conclusions per Day"),
+        h("div", { style: S.barChart },
+          days.map(function (d) {
+            var count = concByDay[d] || 0;
+            var h = Math.round((count / maxConcs) * 120);
+            return h("div", { key: d, style: S.barCol },
+              h("div", { style: Object.assign({}, S.bar, S.barSecondary, { height: h + "px" }), title: count + " conclusions on " + d }),
+              h("small", null, dayLabel(d)),
+              h("small", { style: S.barVal }, String(count))
+            );
+          })
+        )
+      )
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Status Tab
+  // ---------------------------------------------------------------------------
+
+  function StatusTab() {
+    var _u = useState(null), data = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
+
+    useEffect(function () {
+      setLoading(true);
+      fetchJSON(API + "/status")
+        .then(function (d) { setData(d); setError(null); })
+        .catch(function (e) { setError(e.message); })
+        .finally(function () { setLoading(false); });
+    }, []);
+
+    if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading status…");
+    if (error) return h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ " + error);
+    if (!data) return null;
+
+    var q = data.queue || {};
+    var sessionsQ = q.sessions || {};
+    var sessionEntries = [];
+    for (var sid in sessionsQ) { sessionEntries.push(sessionsQ[sid]); }
+    var activeWU = q.active || 0;
+
+    return h("div", null,
+      h("h2", { style: { marginBottom: 16 } }, "System Status"),
+      h("div", { style: S.statGrid },
+        h("div", { style: S.statCard },
+          h("div", { style: Object.assign({}, S.statNumber, data.honcho_reachable ? S.ok : S.bad) },
+            data.honcho_reachable ? "✓" : "✗"
+          ),
+          h("div", { style: S.statLabel }, "Honcho API")
+        ),
+        h("div", { style: S.statCard },
+          h("div", { style: S.statNumber }, String(q.total || 0)),
+          h("div", { style: S.statLabel }, "Total Work Units")
+        ),
+        h("div", { style: S.statCard },
+          h("div", { style: Object.assign({}, S.statNumber, S.ok) }, String(q.completed || 0)),
+          h("div", { style: S.statLabel }, "Completed")
+        ),
+        h("div", { style: S.statCard },
+          h("div", { style: Object.assign({}, S.statNumber, activeWU > 0 ? S.warn : S.ok) }, String(activeWU)),
+          h("div", { style: S.statLabel }, "Pending / In Progress")
+        )
+      ),
+
+      h("div", { style: Object.assign({}, S.cardStatic, { marginTop: 16 }) },
+        h("h3", { style: { marginBottom: 8 } }, "⚡ Queue / Backlog"),
+        activeWU > 0
+          ? h("div", { style: Object.assign({}, S.warn, { fontSize: "0.85rem", marginBottom: 12 }) },
+              "⚡ ", activeWU, " work unit", activeWU > 1 ? "s" : "", " being processed by Honcho"
+            )
+          : h("div", { style: Object.assign({}, S.ok, { fontSize: "0.85rem", marginBottom: 12 }) }, "All work units completed"),
+        sessionEntries.length === 0
+          ? h("div", { style: { color: "#64748B", fontSize: "0.85rem" } }, "No sessions with queue activity.")
+          : sessionEntries.map(function (s) {
+              var total = s.total_work_units || 0;
+              var done = s.completed_work_units || 0;
+              var pend = s.pending_work_units || 0;
+              var inProg = s.in_progress_work_units || 0;
+              var active = pend + inProg;
+              var pct = total > 0 ? Math.round((done / total) * 100) : 100;
+              var barColor = active > 0 ? "#F59E0B" : "#10B981";
+              return h("div", { key: s.session_id, style: S.queueRow },
+                h("div", { style: { fontFamily: "monospace", fontSize: "0.82em", marginBottom: 4 } }, s.session_id),
+                h("div", { style: { display: "flex", alignItems: "center" } },
+                  h("div", { style: S.queueBarBg },
+                    h("div", { style: Object.assign({}, S.queueBarFill, { width: pct + "%", background: barColor }) })
+                  ),
+                  h("span", { style: S.queuePct }, pct + "%")
+                ),
+                h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } },
+                  done, "/", total, " ",
+                  active > 0 ? h("span", { style: S.warn }, active + " active") : h("span", { style: S.ok }, "All done")
+                )
+              );
+            }),
+        h("div", { style: { color: "#64748B", fontSize: "0.75rem", marginTop: 16 } },
+          "Last checked: ", new Date().toLocaleTimeString()
+        )
+      )
     );
   }
 
@@ -377,14 +713,16 @@
   // ---------------------------------------------------------------------------
 
   function HonchoDashboard() {
-    var _useState = useState("overview");
-    var tab = _useState[0], setTab = _useState[1];
+    var _u = useState("overview"), tab = _u[0], setTab = _u[1];
 
     var tabs = [
       { id: "overview", label: "Overview", icon: "📊" },
       { id: "peers", label: "Peers", icon: "👤" },
       { id: "sessions", label: "Sessions", icon: "💬" },
       { id: "conclusions", label: "Conclusions", icon: "🧠" },
+      { id: "search", label: "Search", icon: "🔍" },
+      { id: "analytics", label: "Analytics", icon: "📈" },
+      { id: "status", label: "Status", icon: "📡" },
     ];
 
     var content;
@@ -392,16 +730,23 @@
     else if (tab === "peers") content = h(PeersTab);
     else if (tab === "sessions") content = h(SessionsTab);
     else if (tab === "conclusions") content = h(ConclusionsTab);
+    else if (tab === "search") content = h(SearchTab);
+    else if (tab === "analytics") content = h(AnalyticsTab);
+    else if (tab === "status") content = h(StatusTab);
 
-    return h("div", { style: { height: "100%", display: "flex", flexDirection: "column" } },
-      h("div", { style: { display: "flex", borderBottom: "1px solid #30363d", padding: "0 24px", gap: 4 } },
+    return h("div", { style: S.page },
+      // Header
+      h("div", { style: S.header },
+        h("div", { style: S.headerTitle }, "🧠 Honcho Dashboard"),
+      ),
+      // Tabs
+      h("div", { style: S.tabs },
         tabs.map(function (t) {
           return h(TabBtn, { key: t.id, label: t.label, icon: t.icon, active: tab === t.id, onClick: function () { setTab(t.id); } });
         })
       ),
-      h("div", { style: { flex: 1, overflowY: "auto", padding: "24px", background: "#0d1117" } },
-        content
-      )
+      // Body
+      h("div", { style: S.body }, content)
     );
   }
 
