@@ -492,11 +492,11 @@ async def create_insight(peerId: str, body: dict):
 
 import os as _os
 
-DB_HOST = _os.environ.get("HONCHO_DB_HOST", "172.18.0.5")
+DB_HOST = _os.environ.get("HONCHO_DB_HOST", "127.0.0.1")
 DB_PORT = int(_os.environ.get("HONCHO_DB_PORT", "5432"))
 DB_NAME = _os.environ.get("HONCHO_DB_NAME", "honcho")
 DB_USER = _os.environ.get("HONCHO_DB_USER", "honcho")
-DB_PASS = _os.environ.get("HONCHO_DB_PASS", "")
+DB_PASS = _os.environ.get("HONCHO_DB_PASS", "honcho")
 
 
 def _db_connect():
