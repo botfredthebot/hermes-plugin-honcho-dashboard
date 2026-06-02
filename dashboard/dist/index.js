@@ -152,6 +152,14 @@
       color: "#8b949e", cursor: "pointer", fontSize: "0.82em", padding: "4px 10px",
       marginRight: 8,
     },
+    btnDelete: {
+      background: "none", border: "1px solid #f85149", borderRadius: 4,
+      color: "#f85149", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
+    },
+    btnDeleteConfirm: {
+      background: "#f85149", border: "1px solid #f85149", borderRadius: 4,
+      color: "#fff", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
+    },
 
     // Status
     ok: { color: "#3fb950" },
@@ -248,12 +256,45 @@
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), selectedPeer = _u3[0], setSelectedPeer = _u3[1];
 
-    useEffect(function () {
+    function loadPeers() {
+      setLoading(true);
       fetchJSON(API + "/peers")
         .then(function (d) { setPeers(d.peers || []); })
         .catch(function () {})
         .finally(function () { setLoading(false); });
-    }, []);
+    }
+
+    useEffect(function () { loadPeers(); }, []);
+
+    function deletePeer(peerId, peerName) {
+      if (!window.confirm("Delete peer '" + peerName + "' and all associated data?\n\nThis will remove:\n- The peer\n- All messages sent by this peer\n- All documents, collections, and session links\n\nThis cannot be undone.")) {
+        return;
+      }
+      var token = window.__HERMES_SESSION_TOKEN__ || "";
+      var headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Hermes-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+      }
+      fetch(API + "/peer/" + encodeURIComponent(peerId) + "?confirm=true", {
+        method: "DELETE",
+        headers: headers,
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert("Peer '" + peerName + "' deleted.\n\nRemoved: " +
+              (d.deleted.messages || 0) + " messages, " +
+              (d.deleted.documents || 0) + " documents, " +
+              (d.deleted.collections || 0) + " collections.");
+            if (selectedPeer === peerId) setSelectedPeer(null);
+            loadPeers();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete failed: " + e.message); });
+    }
 
     return h("div", { style: S.twoPane },
       h("div", { style: S.leftPane },
@@ -261,24 +302,39 @@
           ? h("div", { style: { color: "#8b949e" } }, "Loading…")
           : peers.map(function (p) {
               var isSelected = selectedPeer === p.id;
+              var displayName = p.metadata && p.metadata.name ? p.metadata.name : p.id;
               return h("div", {
                   key: p.id,
                   style: Object.assign({}, S.card, isSelected ? S.cardSelected : {}),
-                  onClick: function () { setSelectedPeer(isSelected ? null : p.id); },
                 },
-                h("div", { style: { fontWeight: 600, fontSize: "0.95em", marginBottom: 4 } },
-                  p.metadata && p.metadata.name ? p.metadata.name : p.id
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
+                  h("div", { style: { fontWeight: 600, fontSize: "0.95em" } }, displayName),
+                  h("button", {
+                    title: "Delete peer '" + displayName + "'",
+                    onClick: function (e) {
+                      e.stopPropagation();
+                      deletePeer(p.id, displayName);
+                    },
+                    style: S.btnDelete,
+                  }, "🗑 Delete")
                 ),
+                h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 6 } }, p.id),
                 h("div", { style: S.small },
                   "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
                   " · By: ", h("strong", null, String(p.conclusions_by || 0))
+                ),
+                h("div", { style: { marginTop: 8 } },
+                  h("button", {
+                    onClick: function () { setSelectedPeer(isSelected ? null : p.id); },
+                    style: S.btnSmall,
+                  }, isSelected ? "✕ Close" : "👁 View Details")
                 )
               );
             })
       ),
       h("div", { style: S.rightPane },
         selectedPeer
-          ? h(PeerDetail, { peerId: selectedPeer })
+          ? h(PeerDetail, { peerId: selectedPeer, onDelete: function () { setSelectedPeer(null); loadPeers(); } })
           : h("div", { style: { color: "#8b949e", padding: 40, textAlign: "center" } }, "👈 Select a peer to view details")
       )
     );
@@ -286,10 +342,13 @@
 
   function PeerDetail(props) {
     var peerId = props.peerId;
+    var onDelete = props.onDelete;
     var _u = useState(null), data = _u[0], setData = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(false), showInsight = _u3[0], setShowInsight = _u3[1];
     var _u4 = useState(""), insightText = _u4[0], setInsightText = _u4[1];
+    var _u5 = useState(false), showDeleteConfirm = _u5[0], setShowDeleteConfirm = _u5[1];
+    var _u6 = useState(null), deletePreview = _u6[0], setDeletePreview = _u6[1];
 
     useEffect(function () {
       setLoading(true);
@@ -310,10 +369,86 @@
         .catch(function () {});
     }
 
+    function previewDelete() {
+      var token = window.__HERMES_SESSION_TOKEN__ || "";
+      var headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Hermes-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+      }
+      fetch(API + "/peer/" + encodeURIComponent(peerId), {
+        method: "DELETE",
+        headers: headers,
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { setDeletePreview(d); setShowDeleteConfirm(true); })
+        .catch(function (e) { alert("Error: " + e.message); });
+    }
+
+    function confirmDelete() {
+      var token = window.__HERMES_SESSION_TOKEN__ || "";
+      var headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Hermes-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+      }
+      fetch(API + "/peer/" + encodeURIComponent(peerId) + "?confirm=true", {
+        method: "DELETE",
+        headers: headers,
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert("Peer '" + peerId + "' deleted.\n\nRemoved: " +
+              (d.deleted.messages || 0) + " messages, " +
+              (d.deleted.documents || 0) + " documents, " +
+              (d.deleted.collections || 0) + " collections.");
+            if (onDelete) onDelete();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete failed: " + e.message); });
+    }
+
     var conclusions = (data && data.items) || [];
 
     return h("div", null,
-      h("h3", { style: { marginBottom: 16 } }, "Peer: ", h("code", null, peerId)),
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+        h("h3", { style: { margin: 0 } }, "Peer: ", h("code", null, peerId)),
+        h("button", {
+          onClick: previewDelete,
+          style: S.btnDelete,
+        }, "🗑 Delete Peer")
+      ),
+
+      // Delete confirmation modal
+      showDeleteConfirm
+        ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a" }) },
+            h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Deletion"),
+            deletePreview
+              ? h("div", null,
+                  h("div", { style: { marginBottom: 8 } },
+                    "About to delete peer: ", h("strong", null, deletePreview.peer_name || peerId)
+                  ),
+                  h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 12 } },
+                    "This will remove:",
+                    h("ul", { style: { margin: "4px 0 0 16px", padding: 0 } },
+                      h("li", null, (deletePreview.will_delete.peers || 0) + " peer"),
+                      h("li", null, (deletePreview.will_delete.messages || 0) + " messages"),
+                      h("li", null, (deletePreview.will_delete.documents || 0) + " documents"),
+                      h("li", null, (deletePreview.will_delete.collections || 0) + " collections"),
+                      h("li", null, (deletePreview.will_delete.session_peers || 0) + " session links"),
+                    )
+                  ),
+                  h("div", { style: { display: "flex", gap: 8 } },
+                    h("button", { onClick: confirmDelete, style: S.btnDeleteConfirm }, "🗑 Yes, Delete"),
+                    h("button", { onClick: function () { setShowDeleteConfirm(false); setDeletePreview(null); }, style: S.btn }, "Cancel")
+                  )
+                )
+              : h("div", { style: { color: "#8b949e" } }, "Loading preview…")
+          )
+        : null,
 
       // Add Insight
       h("div", { style: S.section },
@@ -322,7 +457,7 @@
           h("button", {
             onClick: function () { setShowInsight(!showInsight); },
             style: Object.assign({}, S.btnPrimary, { marginLeft: 12 }),
-          }, showInsight ? "Cancel" : "➕ Add Insight"),
+          }, showInsight ? "Cancel" : "➕ Add Insight")
         ),
 
         showInsight

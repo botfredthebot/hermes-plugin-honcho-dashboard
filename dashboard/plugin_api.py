@@ -351,6 +351,171 @@ async def create_insight(peerId: str, body: dict):
     return {"success": True, "message": msg_result, "session_id": session_id}
 
 
+# ---------------------------------------------------------------------------
+# Peer deletion — cascading clean-up in PostgreSQL
+# ---------------------------------------------------------------------------
+
+import os as _os
+
+DB_HOST = _os.environ.get("HONCHO_DB_HOST", "172.18.0.5")
+DB_PORT = int(_os.environ.get("HONCHO_DB_PORT", "5432"))
+DB_NAME = _os.environ.get("HONCHO_DB_NAME", "honcho")
+DB_USER = _os.environ.get("HONCHO_DB_USER", "honcho")
+DB_PASS = _os.environ.get("HONCHO_DB_PASS", "")
+
+
+def _db_connect():
+    """Get a PostgreSQL connection to the Honcho database."""
+    import psycopg2
+    return psycopg2.connect(
+        host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
+        user=DB_USER, password=DB_PASS,
+    )
+
+
+def _delete_peer_cursors(workspace: str, peer_name: str) -> dict:
+    """Delete a peer and all its dependent data. Returns counts of deleted rows."""
+    conn = _db_connect()
+    cur = conn.cursor()
+    deleted = {}
+    try:
+        # Collect session names for this peer
+        cur.execute(
+            "SELECT session_name FROM session_peers WHERE workspace_name = %s AND peer_name = %s",
+            (workspace, peer_name),
+        )
+        session_names = [r[0] for r in cur.fetchall()]
+
+        # 1. Queue entries for messages by this peer
+        cur.execute(
+            "DELETE FROM queue WHERE workspace_name = %s AND message_id IN (SELECT id FROM messages WHERE workspace_name = %s AND peer_name = %s)",
+            (workspace, workspace, peer_name),
+        )
+        deleted["queue"] = cur.rowcount
+
+        # 2. Documents referencing this peer
+        cur.execute(
+            "DELETE FROM documents WHERE workspace_name = %s AND (observed = %s OR observer = %s)",
+            (workspace, peer_name, peer_name),
+        )
+        deleted["documents"] = cur.rowcount
+
+        # 3. Collections referencing this peer
+        cur.execute(
+            "DELETE FROM collections WHERE workspace_name = %s AND (observed = %s OR observer = %s)",
+            (workspace, peer_name, peer_name),
+        )
+        deleted["collections"] = cur.rowcount
+
+        # 4. Message embeddings for this peer
+        cur.execute(
+            "DELETE FROM message_embeddings WHERE workspace_name = %s AND peer_name = %s",
+            (workspace, peer_name),
+        )
+        deleted["message_embeddings"] = cur.rowcount
+
+        # 5. Messages for this peer
+        cur.execute(
+            "DELETE FROM messages WHERE workspace_name = %s AND peer_name = %s",
+            (workspace, peer_name),
+        )
+        deleted["messages"] = cur.rowcount
+
+        # 6. Session-peer links
+        cur.execute(
+            "DELETE FROM session_peers WHERE workspace_name = %s AND peer_name = %s",
+            (workspace, peer_name),
+        )
+        deleted["session_peers"] = cur.rowcount
+
+        # 7. The peer itself
+        cur.execute(
+            "DELETE FROM peers WHERE workspace_name = %s AND name = %s",
+            (workspace, peer_name),
+        )
+        deleted["peers"] = cur.rowcount
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+    return deleted
+
+
+@router.delete("/peer/{peerId}")
+async def delete_peer(peerId: str, confirm: bool = Query(False)):
+    """
+    Delete a peer and all associated data from Honcho.
+    
+    Requires ?confirm=true to actually perform the deletion.
+    Without confirmation, returns a summary of what would be deleted.
+    """
+    import psycopg2
+
+    # Look up the peer by ID to get the name used in foreign keys
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, name FROM peers WHERE workspace_name = %s AND id = %s",
+            (WORKSPACE, peerId),
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Database error: {e}")
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Peer '{peerId}' not found")
+
+    peer_id, peer_name = row
+
+    # Gather dependent counts for the confirmation preview
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM messages WHERE workspace_name = %s AND peer_name = %s", (WORKSPACE, peer_name))
+        msg_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM documents WHERE workspace_name = %s AND (observed = %s OR observer = %s)", (WORKSPACE, peer_name, peer_name))
+        doc_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM collections WHERE workspace_name = %s AND (observed = %s OR observer = %s)", (WORKSPACE, peer_name, peer_name))
+        col_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM session_peers WHERE workspace_name = %s AND peer_name = %s", (WORKSPACE, peer_name))
+        sp_count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+    except Exception:
+        msg_count = doc_count = col_count = sp_count = -1
+
+    if not confirm:
+        return {
+            "peer_id": peer_id,
+            "peer_name": peer_name,
+            "will_delete": {
+                "messages": msg_count,
+                "documents": doc_count,
+                "collections": col_count,
+                "session_peers": sp_count,
+                "peers": 1,
+            },
+            "confirmation_required": True,
+            "message": f"Add ?confirm=true to delete peer '{peer_name}' and all associated data.",
+        }
+
+    # Perform the cascading delete
+    try:
+        deleted = _delete_peer_cursors(WORKSPACE, peer_name)
+    except Exception as e:
+        logger.error("[Honcho Dashboard] Peer deletion error: %s", e)
+        raise HTTPException(status_code=502, detail=f"Deletion failed: {e}")
+
+    return {"success": True, "peer_id": peer_id, "peer_name": peer_name, "deleted": deleted}
+
+
 @router.get("/source-chat")
 async def source_chat(
     session_id: str = Query(...),
