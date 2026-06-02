@@ -580,9 +580,9 @@
         h("div", { style: S.barChart },
           days.map(function (d) {
             var count = msgByDay[d] || 0;
-            var h = Math.round((count / maxMsgs) * 120);
+            var barH = Math.round((count / maxMsgs) * 120);
             return h("div", { key: d, style: S.barCol },
-              h("div", { style: Object.assign({}, S.bar, { height: h + "px" }), title: count + " messages on " + d }),
+              h("div", { style: Object.assign({}, S.bar, { height: barH + "px" }), title: count + " messages on " + d }),
               h("small", null, dayLabel(d)),
               h("small", { style: S.barVal }, String(count))
             );
@@ -594,9 +594,9 @@
         h("div", { style: S.barChart },
           days.map(function (d) {
             var count = concByDay[d] || 0;
-            var h = Math.round((count / maxConcs) * 120);
+            var barH = Math.round((count / maxConcs) * 120);
             return h("div", { key: d, style: S.barCol },
-              h("div", { style: Object.assign({}, S.bar, S.barSecondary, { height: h + "px" }), title: count + " conclusions on " + d }),
+              h("div", { style: Object.assign({}, S.bar, S.barSecondary, { height: barH + "px" }), title: count + " conclusions on " + d }),
               h("small", null, dayLabel(d)),
               h("small", { style: S.barVal }, String(count))
             );
