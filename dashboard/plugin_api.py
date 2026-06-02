@@ -200,10 +200,13 @@ async def list_conclusions(
 ):
     """List conclusions with optional filters."""
     body: dict = {"limit": limit}
+    filters = {}
     if observer_id:
-        body["observer_id"] = observer_id
+        filters["observer_id"] = observer_id
     if observed_id:
-        body["observed_id"] = observed_id
+        filters["observed_id"] = observed_id
+    if filters:
+        body["options"] = {"filters": filters}
 
     return honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", body)
 
