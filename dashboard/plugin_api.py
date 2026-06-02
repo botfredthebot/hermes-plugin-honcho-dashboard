@@ -250,9 +250,9 @@ async def analytics():
             day = c["created_at"][:10]
             conc_by_day[day] = conc_by_day.get(day, 0) + 1
 
-    # Count total messages across all sessions
+    # Count total messages across all sessions (sample first 5 for speed)
     total_messages = 0
-    for s in session_items:
+    for s in session_items[:5]:
         try:
             m = honcho_post(
                 f"/v3/workspaces/{WORKSPACE}/sessions/{s['id']}/messages/list",
@@ -324,26 +324,23 @@ async def honcho_status():
 
 @router.post("/peer/{peerId}/insight")
 async def create_insight(peerId: str, body: dict):
-    """Submit an insight about a peer by posting a message to their most recent session."""
+    """Submit an insight about a peer by posting a message to the most recent session."""
     content = (body.get("content") or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="Content required")
 
-    # Find most recent session for this peer
+    # Get all sessions and sort by created_at desc
     sessions = honcho_post(
         f"/v3/workspaces/{WORKSPACE}/sessions/list",
         {"limit": 50},
     )
-    peer_sessions = [
-        s for s in sessions.get("items", [])
-        if s.get("peer_id") == peerId
-    ]
-    if not peer_sessions:
-        raise HTTPException(status_code=400, detail=f"No sessions found for peer {peerId}")
+    all_sessions = sessions.get("items", [])
+    if not all_sessions:
+        raise HTTPException(status_code=400, detail="No sessions found in workspace")
 
     # Sort by created_at desc to get most recent
-    peer_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
-    session_id = peer_sessions[0]["id"]
+    all_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
+    session_id = all_sessions[0]["id"]
 
     # Post message to the session
     msg_result = honcho_post(

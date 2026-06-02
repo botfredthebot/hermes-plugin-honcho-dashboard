@@ -8,8 +8,15 @@
 (function () {
   "use strict";
 
+  try {
+
   var SDK = window.__HERMES_PLUGIN_SDK__;
-  if (!SDK) return;
+  if (!SDK) {
+    console.error("[Honcho Dashboard] SDK not available, skipping registration");
+    return;
+  }
+
+  console.log("[Honcho Dashboard] SDK found, initializing...");
 
   var React = SDK.React;
   var h = React.createElement;
@@ -705,13 +712,18 @@
     ];
 
     var content;
-    if (tab === "overview") content = h(OverviewTab);
-    else if (tab === "peers") content = h(PeersTab);
-    else if (tab === "sessions") content = h(SessionsTab);
-    else if (tab === "conclusions") content = h(ConclusionsTab);
-    else if (tab === "search") content = h(SearchTab);
-    else if (tab === "analytics") content = h(AnalyticsTab);
-    else if (tab === "status") content = h(StatusTab);
+    try {
+      if (tab === "overview") content = h(OverviewTab);
+      else if (tab === "peers") content = h(PeersTab);
+      else if (tab === "sessions") content = h(SessionsTab);
+      else if (tab === "conclusions") content = h(ConclusionsTab);
+      else if (tab === "search") content = h(SearchTab);
+      else if (tab === "analytics") content = h(AnalyticsTab);
+      else if (tab === "status") content = h(StatusTab);
+    } catch(e) {
+      console.error("[Honcho Dashboard] Tab render error:", e);
+      content = h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ Error rendering " + tab + ": " + e.message);
+    }
 
     return h("div", { style: S.page },
       // Header
@@ -735,5 +747,9 @@
 
   if (window.__HERMES_PLUGINS__ && typeof window.__HERMES_PLUGINS__.register === "function") {
     window.__HERMES_PLUGINS__.register("honcho-dashboard", HonchoDashboard);
+    console.log("[Honcho Dashboard] Registered successfully");
+  } else {
+    console.error("[Honcho Dashboard] register function not available");
   }
+  } catch(e) { console.error("[Honcho Dashboard] Init error:", e); }
 })();
