@@ -290,7 +290,15 @@ async def honcho_status():
         honcho_error = str(e)
 
     # Queue status
-    queue = honcho_post(f"/v3/workspaces/{WORKSPACE}/queue/status")
+    try:
+        req = urllib.request.Request(
+            f"{HONCHO_BASE}/v3/workspaces/{WORKSPACE}/queue/status",
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            queue = json.loads(resp.read())
+    except Exception:
+        queue = {}
     total_wu = queue.get("total_work_units", 0)
     completed_wu = queue.get("completed_work_units", 0)
     pending_wu = queue.get("pending_work_units", 0)
@@ -344,17 +352,6 @@ async def create_insight(peerId: str, body: dict):
     )
 
     return {"success": True, "message": msg_result, "session_id": session_id}
-
-
-@router.get("/peer/{peerId}/sessions")
-async def peer_sessions(peerId: str):
-    """List sessions for a specific peer."""
-    sessions = honcho_post(
-        f"/v3/workspaces/{WORKSPACE}/sessions/list",
-        {"limit": 100},
-    )
-    items = [s for s in sessions.get("items", []) if s.get("peer_id") == peerId]
-    return {"sessions": items, "total": len(items)}
 
 
 @router.get("/source-chat")

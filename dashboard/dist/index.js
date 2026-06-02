@@ -24,7 +24,11 @@
 
   function fetchJSON(url) {
     var token = window.__HERMES_SESSION_TOKEN__ || "";
-    var headers = token ? { "X-Session-Token": token } : {};
+    var headers = {};
+    if (token) {
+      headers["X-Hermes-Session-Token"] = token;
+      headers["Authorization"] = "Bearer " + token;
+    }
     return fetch(url, { headers: headers }).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
@@ -277,10 +281,8 @@
     var peerId = props.peerId;
     var _u = useState(null), data = _u[0], setData = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
-    var _u3 = useState([]), sessions = _u3[0], setSessions = _u3[1];
-    var _u4 = useState(true), sessionsLoading = _u4[0], setSessionsLoading = _u4[1];
-    var _u5 = useState(false), showInsight = _u5[0], setShowInsight = _u5[1];
-    var _u6 = useState(""), insightText = _u6[0], setInsightText = _u6[1];
+    var _u3 = useState(false), showInsight = _u3[0], setShowInsight = _u3[1];
+    var _u4 = useState(""), insightText = _u4[0], setInsightText = _u4[1];
 
     useEffect(function () {
       setLoading(true);
@@ -288,14 +290,6 @@
         .then(function (d) { setData(d); })
         .catch(function () {})
         .finally(function () { setLoading(false); });
-    }, [peerId]);
-
-    useEffect(function () {
-      setSessionsLoading(true);
-      fetchJSON(API + "/peer/" + encodeURIComponent(peerId) + "/sessions")
-        .then(function (d) { setSessions(d.sessions || []); })
-        .catch(function () {})
-        .finally(function () { setSessionsLoading(false); });
     }, [peerId]);
 
     function submitInsight() {
@@ -313,21 +307,6 @@
 
     return h("div", null,
       h("h3", { style: { marginBottom: 16 } }, "Peer: ", h("code", null, peerId)),
-
-      // Sessions section
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "💬 Sessions (", sessions.length, ")"),
-        sessionsLoading
-          ? h("div", { style: { color: "#8b949e", fontSize: "0.82em" } }, "Loading…")
-          : sessions.length === 0
-          ? h("div", { style: { color: "#8b949e", fontSize: "0.82em" } }, "No sessions for this peer.")
-          : sessions.map(function (s) {
-              return h("div", { key: s.id, style: Object.assign({}, S.cardStatic, { cursor: "default" }) },
-                h("div", { style: S.mono }, s.id),
-                h("div", { style: S.small }, "Created: ", fmtDate(s.created_at), s.is_active ? " · Active" : "")
-              );
-            })
-      ),
 
       // Add Insight
       h("div", { style: S.section },
