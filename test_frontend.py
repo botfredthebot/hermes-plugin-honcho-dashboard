@@ -154,17 +154,36 @@ class TestHonchoDashboardPlugin:
         assert not js_errs, f"JS errors on Analytics tab:\n" + "\n".join(js_errs[:5])
 
     def test_all_tabs_navigable(self, page, errors):
-        """All Honcho subtabs should render the Overview tab without JS errors."""
+        """Honcho plugin should render peer list without JS errors."""
         click_tab(page, "HONCHO")
         page.wait_for_timeout(2_000)
-        # The Overview tab renders by default — check for stat cards or summary text
+        # Navigate to Peers subtab
+        try:
+            page.click("text=Peers", timeout=3_000)
+            page.wait_for_timeout(2_000)
+        except Exception:
+            pass
         page_content = page.content()
-        # Should have rendered some content (not blank, not an error)
-        assert "HONCHO" in page_content or "Overview" in page_content or "Peers" in page_content, \
-            "Honcho plugin content not rendered"
-        # Most critically: no JS errors
+        assert "hermes-owl" in page_content or "8719181389" in page_content, \
+            "Expected peers not found in page"
         js_errs = [e for e in errors if "JS_ERROR" in e]
-        assert not js_errs, f"JS errors navigating Honcho plugin:\n" + "\n".join(js_errs[:5])
+        assert not js_errs, f"JS errors on Peers tab:\n" + "\n".join(js_errs[:5])
+
+    def test_peer_card_has_delete_button(self, page, errors):
+        """Each peer card should have a delete button."""
+        click_tab(page, "HONCHO")
+        page.wait_for_timeout(1_000)
+        # Click Peers subtab
+        try:
+            page.click("text=Peers", timeout=3_000)
+            page.wait_for_timeout(2_000)
+        except Exception:
+            pass
+        page_content = page.content()
+        js_errs = [e for e in errors if "JS_ERROR" in e]
+        assert not js_errs, f"JS errors:\n" + "\n".join(js_errs[:3])
+        assert "Delete" in page_content or "delete" in page_content.lower(), \
+            "Delete button not found on peer cards"
 
 
 # =================================================================== #
