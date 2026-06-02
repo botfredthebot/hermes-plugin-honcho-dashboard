@@ -1,0 +1,13 @@
+{
+  "name": "honcho-dashboard",
+  "label": "Honcho",
+  "description": "Honcho memory dashboard — peers, sessions, conclusions, and messages.",
+  "icon": "Brain",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "tab": {
+    "path": "/honcho",
+    "position": "end"
+  },
+  "api": "plugin_api.py"
+}
