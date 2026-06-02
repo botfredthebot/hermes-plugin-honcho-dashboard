@@ -500,32 +500,197 @@
     var _u = useState([]), sessions = _u[0], setSessions = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), expanded = _u3[0], setExpanded = _u3[1];
+    var _u4 = useState(false), showDeleteConfirm = _u4[0], setShowDeleteConfirm = _u4[1];
+    var _u5 = useState(null), deleteTarget = _u5[0], setDeleteTarget = _u5[1];
+    var _u6 = useState(null), deletePreview = _u6[0], setDeletePreview = _u6[1];
+    var _u7 = useState(false), deleting = _u7[0], setDeleting = _u7[1];
 
-    useEffect(function () {
+    function loadSessions() {
+      setLoading(true);
       fetchJSON(API + "/sessions")
         .then(function (d) { setSessions(d.sessions || []); })
         .catch(function () {})
         .finally(function () { setLoading(false); });
-    }, []);
+    }
+
+    useEffect(function () { loadSessions(); }, []);
+
+    var emptySessions = sessions.filter(function (s) { return (s.message_count || 0) === 0; });
+
+    function previewDelete(sessionId) {
+      var token = window.__HERMES_SESSION_TOKEN__ || "";
+      var headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Hermes-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+      }
+      fetch(API + "/session/" + encodeURIComponent(sessionId), {
+        method: "DELETE",
+        headers: headers,
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { setDeletePreview(d); setDeleteTarget(sessionId); setShowDeleteConfirm(true); })
+        .catch(function (e) { alert("Error: " + e.message); });
+    }
+
+    function confirmDelete() {
+      if (!deleteTarget) return;
+      setDeleting(true);
+      var token = window.__HERMES_SESSION_TOKEN__ || "";
+      var headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Hermes-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+      }
+      fetch(API + "/session/" + encodeURIComponent(deleteTarget) + "?confirm=true", {
+        method: "DELETE",
+        headers: headers,
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert("Session '" + deleteTarget + "' deleted.\n\nRemoved: " +
+              (d.deleted.messages || 0) + " messages, " +
+              (d.deleted.message_embeddings || 0) + " embeddings, " +
+              (d.deleted.session_peers || 0) + " peer links.");
+            setShowDeleteConfirm(false);
+            setDeleteTarget(null);
+            setDeletePreview(null);
+            loadSessions();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete failed: " + e.message); })
+        .finally(function () { setDeleting(false); });
+    }
+
+    function deleteAllEmpty() {
+      if (emptySessions.length === 0) return;
+      if (!window.confirm("Delete " + emptySessions.length + " empty session(s)?\n\nThese sessions have no messages and cannot be recovered.")) {
+        return;
+      }
+      var completed = 0;
+      var failed = 0;
+      var token = window.__HERMES_SESSION_TOKEN__ || "";
+      var headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Hermes-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+      }
+      emptySessions.forEach(function (s) {
+        fetch(API + "/session/" + encodeURIComponent(s.id) + "?confirm=true", {
+          method: "DELETE",
+          headers: headers,
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.success) { completed++; } else { failed++; }
+          })
+          .catch(function () { failed++; })
+          .finally(function () {
+            if (completed + failed === emptySessions.length) {
+              alert("Done.\nDeleted: " + completed + " session(s)" +
+                (failed > 0 ? "\nFailed: " + failed : ""));
+              loadSessions();
+            }
+          });
+      });
+    }
 
     return h("div", null,
-      h("div", { style: { fontWeight: 600, marginBottom: 14 } },
-        "All Sessions (", sessions.length, ")"
+      // Header with bulk delete
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+        h("div", { style: { fontWeight: 600 } },
+          "All Sessions (", sessions.length, ")",
+          emptySessions.length > 0
+            ? h("span", { style: { color: "#d29922", fontSize: "0.82em", marginLeft: 8 } },
+                "— ", emptySessions.length, " empty"
+              )
+            : null
+        ),
+        emptySessions.length > 0
+          ? h("button", {
+              onClick: deleteAllEmpty,
+              style: S.btnDelete,
+            }, "🗑 Delete All Empty (", emptySessions.length, ")")
+          : null
       ),
+
+      // Delete confirmation modal
+      showDeleteConfirm
+        ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginBottom: 16 }) },
+            h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Session Deletion"),
+            deletePreview
+              ? h("div", null,
+                  h("div", { style: { marginBottom: 8 } },
+                    "About to delete session: ", h("code", null, deletePreview.session_id)
+                  ),
+                  h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 12 } },
+                    "This will remove:",
+                    h("ul", { style: { margin: "4px 0 0 16px", padding: 0 } },
+                      h("li", null, (deletePreview.will_delete.sessions || 0) + " session"),
+                      h("li", null, (deletePreview.will_delete.messages || 0) + " messages"),
+                      h("li", null, (deletePreview.will_delete.message_embeddings || 0) + " message embeddings"),
+                      h("li", null, (deletePreview.will_delete.session_peers || 0) + " session-peer links"),
+                      h("li", null, (deletePreview.will_delete.documents || 0) + " documents"),
+                    )
+                  ),
+                  h("div", { style: { display: "flex", gap: 8 } },
+                    h("button", {
+                      onClick: confirmDelete,
+                      disabled: deleting,
+                      style: S.btnDeleteConfirm,
+                    }, deleting ? "Deleting…" : "🗑 Yes, Delete"),
+                    h("button", {
+                      onClick: function () { setShowDeleteConfirm(false); setDeleteTarget(null); setDeletePreview(null); },
+                      disabled: deleting,
+                      style: S.btn,
+                    }, "Cancel")
+                  )
+                )
+              : h("div", { style: { color: "#8b949e" } }, "Loading preview…")
+          )
+        : null,
+
+      // Session list
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
         : sessions.length === 0
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No sessions found.")
         : sessions.map(function (s) {
+            var msgCount = s.message_count || 0;
+            var isEmpty = msgCount === 0;
             return h("div", null,
               h("div", {
-                  key: s.id, style: S.card,
-                  onClick: function () { setExpanded(expanded === s.id ? null : s.id); },
+                  key: s.id,
+                  style: Object.assign({}, S.card, isEmpty ? { border: "1px solid #d2992244", background: "#1a1408" } : {}),
                 },
-                h("div", { style: S.mono }, s.id),
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                  h("div", null,
+                    h("div", { style: S.mono }, s.id),
+                    h("div", { style: { fontSize: "0.78em", marginTop: 2 } },
+                      h("span", { style: { color: isEmpty ? "#d29922" : "#3fb950" } },
+                        msgCount, " ", msgCount === 1 ? "message" : "messages"
+                      ),
+                      s.is_active ? h("span", { style: { color: "#3fb950", marginLeft: 8 } }, "· Active") : null,
+                      isEmpty ? h("span", { style: { color: "#d29922", marginLeft: 8 } }, "· ⚠ Empty") : null
+                    )
+                  ),
+                  h("div", { style: { display: "flex", gap: 6 } },
+                    h("button", {
+                      onClick: function () { setExpanded(expanded === s.id ? null : s.id); },
+                      style: S.btnSmall,
+                    }, expanded === s.id ? "▾ Hide" : "▸ View"),
+                    h("button", {
+                      onClick: function () { previewDelete(s.id); },
+                      style: S.btnDelete,
+                      title: "Delete session"
+                    }, "🗑")
+                  )
+                ),
                 h("div", { style: S.small },
-                  "Created: ", fmtDate(s.created_at), s.is_active ? " · Active" : "",
-                  expanded === s.id ? " ▾" : " ▸"
+                  "Created: ", fmtDate(s.created_at)
                 )
               ),
               expanded === s.id ? h(SessionMessages, { sessionId: s.id }) : null

@@ -178,9 +178,144 @@ async def list_peers():
 
 @router.get("/sessions")
 async def list_sessions():
-    """List all sessions grouped by peer."""
-    sessions = honcho_post(f"/v3/workspaces/{WORKSPACE}/sessions/list", {"limit": 100})
-    return {"sessions": sessions.get("items", []), "total": sessions.get("total", 0)}
+    """List all sessions with message counts."""
+    sessions = honcho_post(f"/v3/workspaces/{WORKSPACE}/sessions/list", {"limit": 200})
+    session_items = sessions.get("items", [])
+
+    # Enrich each session with its message count
+    for s in session_items:
+        sid = s["id"]
+        try:
+            msgs = honcho_post(
+                f"/v3/workspaces/{WORKSPACE}/sessions/{sid}/messages/list",
+                {"limit": 1},
+            )
+            s["message_count"] = msgs.get("total", 0)
+        except Exception:
+            s["message_count"] = 0
+
+    return {"sessions": session_items, "total": sessions.get("total", len(session_items))}
+
+
+@router.delete("/session/{session_id}")
+async def delete_session(session_id: str, confirm: bool = Query(False)):
+    """
+    Delete a session and all its messages/embeddings.
+    
+    Requires ?confirm=true to actually perform the deletion.
+    Without confirmation, returns a summary of what would be deleted.
+    """
+    import psycopg2
+
+    conn = _db_connect()
+    cur = conn.cursor()
+
+    # Check the session exists and get its name
+    cur.execute(
+        "SELECT id FROM sessions WHERE workspace_name = %s AND id = %s",
+        (WORKSPACE, session_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    # Gather dependent counts for preview
+    cur.execute(
+        "SELECT COUNT(*) FROM messages WHERE workspace_name = %s AND session_name = %s",
+        (WORKSPACE, session_id),
+    )
+    msg_count = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM message_embeddings WHERE workspace_name = %s AND session_name = %s",
+        (WORKSPACE, session_id),
+    )
+    emb_count = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM session_peers WHERE workspace_name = %s AND session_name = %s",
+        (WORKSPACE, session_id),
+    )
+    sp_count = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM documents WHERE workspace_name = %s AND session_name = %s",
+        (WORKSPACE, session_id),
+    )
+    doc_count = cur.fetchone()[0]
+
+    cur.close()
+    conn.close()
+
+    if not confirm:
+        return {
+            "session_id": session_id,
+            "will_delete": {
+                "sessions": 1,
+                "messages": msg_count,
+                "message_embeddings": emb_count,
+                "session_peers": sp_count,
+                "documents": doc_count,
+            },
+            "confirmation_required": True,
+            "message": f"Add ?confirm=true to delete session '{session_id}' and all associated data.",
+        }
+
+    # Perform the cascading delete
+    conn = _db_connect()
+    cur = conn.cursor()
+    deleted = {}
+    try:
+        # Queue entries for this session's messages
+        cur.execute(
+            "DELETE FROM queue WHERE workspace_name = %s AND message_id IN (SELECT id FROM messages WHERE workspace_name = %s AND session_name = %s)",
+            (WORKSPACE, WORKSPACE, session_id),
+        )
+        deleted["queue"] = cur.rowcount
+
+        # Documents referencing this session
+        cur.execute(
+            "DELETE FROM documents WHERE workspace_name = %s AND session_name = %s",
+            (WORKSPACE, session_id),
+        )
+        deleted["documents"] = cur.rowcount
+
+        # Message embeddings
+        cur.execute(
+            "DELETE FROM message_embeddings WHERE workspace_name = %s AND session_name = %s",
+            (WORKSPACE, session_id),
+        )
+        deleted["message_embeddings"] = cur.rowcount
+
+        # Messages
+        cur.execute(
+            "DELETE FROM messages WHERE workspace_name = %s AND session_name = %s",
+            (WORKSPACE, session_id),
+        )
+        deleted["messages"] = cur.rowcount
+
+        # Session-peer links
+        cur.execute(
+            "DELETE FROM session_peers WHERE workspace_name = %s AND session_name = %s",
+            (WORKSPACE, session_id),
+        )
+        deleted["session_peers"] = cur.rowcount
+
+        # The session itself
+        cur.execute(
+            "DELETE FROM sessions WHERE workspace_name = %s AND id = %s",
+            (WORKSPACE, session_id),
+        )
+        deleted["sessions"] = cur.rowcount
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    return {"success": True, "session_id": session_id, "deleted": deleted}
 
 
 @router.get("/session/{session_id}/messages")
