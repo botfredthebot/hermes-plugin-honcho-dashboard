@@ -983,6 +983,8 @@
     var _u3 = useState(null), error = _u3[0], setError = _u3[1];
     var _u4 = useState(false), saving = _u4[0], setSaving = _u4[1];
     var _u5 = useState(null), saveMsg = _u5[0], setSaveMsg = _u5[1];
+    var _u6 = useState(null), globalConfig = _u6[0], setGlobalConfig = _u6[1];
+    var _u7 = useState(true), globalLoading = _u7[0], setGlobalLoading = _u7[1];
 
     function loadConfig() {
       setLoading(true);
@@ -993,169 +995,248 @@
         .finally(function () { setLoading(false); });
     }
 
-    useEffect(function () { loadConfig(); }, []);
+    function loadGlobalConfig() {
+      setGlobalLoading(true);
+      fetchJSON(API + "/global-config")
+        .then(function (d) { setGlobalConfig(d); })
+        .catch(function () { /* global config is best-effort */ })
+        .finally(function () { setGlobalLoading(false); });
+    }
+
+    useEffect(function () { loadConfig(); loadGlobalConfig(); }, []);
 
     function updateField(path, value) {
-      // path like "reasoning.enabled" or "summary.messages_per_short_summary"
-      var parts = path.split(".");
-      var newConfig = JSON.parse(JSON.stringify(config || {}));
-      var obj = newConfig.configuration = newConfig.configuration || {};
-      for (var i = 0; i < parts.length - 1; i++) {
-        if (!obj[parts[i]] || typeof obj[parts[i]] !== "object") {
-          obj[parts[i]] = {};
-        }
-        obj = obj[parts[i]];
-      }
-      obj[parts[parts.length - 1]] = value;
-      setConfig(newConfig);
-    }
-
-    function handleSave() {
-      if (!config) return;
-      setSaving(true);
-      setSaveMsg(null);
-      fetch(API + "/config", {
-        method: "PUT",
-        headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
-        body: JSON.stringify({ configuration: config.configuration || {} }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.success) {
-            setSaveMsg({ type: "ok", text: "Configuration saved successfully." });
-            // Reload to get fresh config
-            loadConfig();
-          } else {
-            setSaveMsg({ type: "err", text: (d.detail || "Save failed") });
+        var parts = path.split(".");
+        var newConfig = JSON.parse(JSON.stringify(config || {}));
+        var obj = newConfig.configuration = newConfig.configuration || {};
+        for (var i = 0; i < parts.length - 1; i++) {
+          if (!obj[parts[i]] || typeof obj[parts[i]] !== "object") {
+            obj[parts[i]] = {};
           }
+          obj = obj[parts[i]];
+        }
+        obj[parts[parts.length - 1]] = value;
+        setConfig(newConfig);
+      }
+
+      function handleSave() {
+        if (!config) return;
+        setSaving(true);
+        setSaveMsg(null);
+        fetch(API + "/config", {
+          method: "PUT",
+          headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
+          body: JSON.stringify({ configuration: config.configuration || {} }),
         })
-        .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
-        .finally(function () { setSaving(false); });
-    }
-
-    function renderToggle(label, path, description) {
-      var parts = path.split(".");
-      var cfg = (config && config.configuration) || {};
-      for (var i = 0; i < parts.length; i++) {
-        if (!cfg || typeof cfg !== "object") { cfg = null; break; }
-        cfg = cfg[parts[i]];
-      }
-      var isOn = cfg === true;
-      var isOff = cfg === false;
-      return h("div", { style: { marginBottom: 16 } },
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-          h("div", null,
-            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
-            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
-          ),
-          h("div", { style: { display: "flex", gap: 6 } },
-            h("button", {
-              onClick: function () { updateField(path, true); },
-              style: Object.assign({}, S.btn, isOn ? { background: "#238636", borderColor: "#2ea043", color: "#fff" } : {}),
-            }, "On"),
-            h("button", {
-              onClick: function () { updateField(path, false); },
-              style: Object.assign({}, S.btn, isOff ? { background: "#f85149", borderColor: "#f85149", color: "#fff" } : {}),
-            }, "Off")
-          )
-        )
-      );
-    }
-
-    function renderNumber(label, path, description, min, max) {
-      var parts = path.split(".");
-      var cfg = (config && config.configuration) || {};
-      for (var i = 0; i < parts.length; i++) {
-        if (!cfg || typeof cfg !== "object") { cfg = null; break; }
-        cfg = cfg[parts[i]];
-      }
-      var val = (cfg != null) ? cfg : "";
-      return h("div", { style: { marginBottom: 16 } },
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-          h("div", null,
-            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
-            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
-          ),
-          h("input", {
-            type: "number",
-            min: min,
-            max: max,
-            value: val,
-            onChange: function (e) {
-              var v = parseInt(e.target.value, 10);
-              if (!isNaN(v)) updateField(path, v);
-            },
-            style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.success) {
+              setSaveMsg({ type: "ok", text: "Configuration saved successfully." });
+              loadConfig();
+            } else {
+              setSaveMsg({ type: "err", text: (d.detail || "Save failed") });
+            }
           })
-        )
-      );
-    }
-
-    function renderTextarea(label, path, description) {
-      var parts = path.split(".");
-      var cfg = (config && config.configuration) || {};
-      for (var i = 0; i < parts.length; i++) {
-        if (!cfg || typeof cfg !== "object") { cfg = null; break; }
-        cfg = cfg[parts[i]];
+          .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
+          .finally(function () { setSaving(false); });
       }
-      var val = (cfg != null) ? cfg : "";
-      return h("div", { style: { marginBottom: 16 } },
-        h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
-        description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
-        h("textarea", {
-          value: val,
-          onChange: function (e) { updateField(path, e.target.value); },
-          placeholder: "Enter custom instructions…",
-          rows: 3,
-          style: S.textarea,
-        })
+
+      // ── Toggle switch ──────────────────────────────────────────────────
+      function renderToggle(label, path, description) {
+        var parts = path.split(".");
+        var cfg = (config && config.configuration) || {};
+        for (var i = 0; i < parts.length; i++) {
+          if (!cfg || typeof cfg !== "object") { cfg = null; break; }
+          cfg = cfg[parts[i]];
+        }
+        var isOn = cfg === true;
+        return h("div", { style: { marginBottom: 16 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+            h("div", null,
+              h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
+              description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+            ),
+            h("button", {
+              onClick: function () { updateField(path, !isOn); },
+              title: isOn ? "Currently ON — click to disable" : "Currently OFF — click to enable",
+              style: {
+                width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+                background: isOn ? "#238636" : "#30363d",
+                position: "relative", padding: 0, transition: "background 0.2s",
+              },
+            },
+              h("div", {
+                style: {
+                  width: 20, height: 20, borderRadius: 10, background: "#fff",
+                  position: "absolute", top: 3, left: isOn ? 25 : 3,
+                  transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+                },
+              })
+            )
+          )
+        );
+      }
+
+      // ── Number input ───────────────────────────────────────────────────
+      function renderNumber(label, path, description, min, max) {
+        var parts = path.split(".");
+        var cfg = (config && config.configuration) || {};
+        for (var i = 0; i < parts.length; i++) {
+          if (!cfg || typeof cfg !== "object") { cfg = null; break; }
+          cfg = cfg[parts[i]];
+        }
+        var val = (cfg != null) ? cfg : "";
+        return h("div", { style: { marginBottom: 16 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+            h("div", null,
+              h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
+              description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+            ),
+            h("input", {
+              type: "number",
+              min: min, max: max, value: val,
+              onChange: function (e) {
+                var v = parseInt(e.target.value, 10);
+                if (!isNaN(v)) updateField(path, v);
+              },
+              style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
+            })
+          )
+        );
+      }
+
+      // ── Textarea ───────────────────────────────────────────────────────
+      function renderTextarea(label, path, description) {
+        var parts = path.split(".");
+        var cfg = (config && config.configuration) || {};
+        for (var i = 0; i < parts.length; i++) {
+          if (!cfg || typeof cfg !== "object") { cfg = null; break; }
+          cfg = cfg[parts[i]];
+        }
+        var val = (cfg != null) ? cfg : "";
+        return h("div", { style: { marginBottom: 16 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
+          description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
+          h("textarea", {
+            value: val,
+            onChange: function (e) { updateField(path, e.target.value); },
+            placeholder: "Enter custom instructions…",
+            rows: 3, style: S.textarea,
+          })
+        );
+      }
+
+      // ── Model info display ─────────────────────────────────────────────
+      function renderModelSection(title, icon, modelCfg) {
+        if (!modelCfg) return null;
+        var model = modelCfg.model || "unknown";
+        var transport = modelCfg.transport || "";
+        var maxTokens = modelCfg.max_output_tokens || modelCfg.max_tokens || "—";
+        var thinking = modelCfg.thinking_budget_tokens;
+        return h("div", { style: { marginBottom: 12, padding: "10px 12px", background: "#0d1117", border: "1px solid #21262d", borderRadius: 6 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
+            h("span", { style: { fontWeight: 600, fontSize: "0.85em" } }, icon, " ", title),
+            h("span", { style: { fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "#161b22", borderRadius: 4, border: "1px solid #30363d" } }, transport)
+          ),
+          h("div", { style: { fontFamily: "monospace", fontSize: "0.82em", color: "#58a6ff", marginBottom: 2 } }, model),
+          h("div", { style: { fontSize: "0.72em", color: "#8b949e" } },
+            "Max tokens: ", h("strong", null, String(maxTokens)),
+            thinking != null ? h("span", null, " · Thinking budget: ", h("strong", null, String(thinking))) : null
+          )
+        );
+      }
+
+      function extractModels(gc) {
+        if (!gc) return {};
+        return {
+          deriver: gc.deriver ? gc.deriver.model_config : null,
+          dialectic: {
+            minimal: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.minimal : null,
+            low: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.low : null,
+            medium: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.medium : null,
+            high: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.high : null,
+            max: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.max : null,
+          },
+          summary: gc.summary ? gc.summary.model_config : null,
+          dream: {
+            main: gc.dream ? gc.dream.main_model_config : null,
+            deduction: gc.dream ? gc.dream.deduction_model_config : null,
+            induction: gc.dream ? gc.dream.induction_model_config : null,
+          },
+          embedding: gc.embedding ? gc.embedding.model_config : null,
+        };
+      }
+
+      if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
+      if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
+        h("div", null, "⚠️ Failed to load configuration"),
+        h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
+        h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry. If this persists, the gateway may need a restart.")
+      );
+
+      var models = extractModels(globalConfig);
+
+      return h("div", null,
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+          h("h2", { style: { margin: 0 } }, "Workspace Configuration"),
+          h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+            saveMsg
+              ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text)
+              : null,
+            h("button", { onClick: handleSave, disabled: saving, style: S.btnPrimary },
+              saving ? "Saving…" : "💾 Save Changes")
+          )
+        ),
+
+        h("div", { style: S.section },
+          h("div", { style: S.sectionTitle }, "🧠 Reasoning"),
+          renderToggle("Enable Reasoning", "reasoning.enabled", "Whether Honcho will use reasoning to form representations and draw conclusions"),
+          renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions for the reasoning system")
+        ),
+
+        h("div", { style: S.section },
+          h("div", { style: S.sectionTitle }, "👤 Peer Cards"),
+          renderToggle("Use Peer Cards", "peer_card.use", "Whether to use peer cards during the reasoning process"),
+          renderToggle("Create Peer Cards", "peer_card.create", "Whether to generate peer cards based on content")
+        ),
+
+        h("div", { style: S.section },
+          h("div", { style: S.sectionTitle }, "📝 Summaries"),
+          renderToggle("Enable Summaries", "summary.enabled", "Whether to enable session summary functionality"),
+          renderNumber("Messages per Short Summary", "summary.messages_per_short_summary", "Number of messages before generating a short summary (min 10)", 10, 500),
+          renderNumber("Messages per Long Summary", "summary.messages_per_long_summary", "Number of messages before generating a long summary (min 20)", 20, 1000)
+        ),
+
+        h("div", { style: S.section },
+          h("div", { style: S.sectionTitle }, "💤 Dream"),
+          renderToggle("Enable Dream", "dream.enabled", "Whether Honcho will run background 'dream' processing")
+        ),
+
+        // ── Models section ──────────────────────────────────────────────
+        h("div", { style: S.section },
+          h("div", { style: S.sectionTitle }, "🤖 Models"),
+          globalLoading
+            ? h("div", { style: { color: "#8b949e", fontSize: "0.82em", padding: "8px 0" } }, "Loading model info…")
+            : !globalConfig
+            ? h("div", { style: { color: "#8b949e", fontSize: "0.82em", padding: "8px 0" } }, "Model info unavailable (gateway may need a restart)")
+            : h("div", null,
+                models.deriver ? renderModelSection("Deriver", "⚡", models.deriver) : null,
+                models.summary ? renderModelSection("Summary", "📝", models.summary) : null,
+                models.embedding ? renderModelSection("Embedding", "🔢", models.embedding) : null,
+                models.dream && models.dream.main ? renderModelSection("Dream (Main)", "💤", models.dream.main) : null,
+                models.dream && models.dream.deduction ? renderModelSection("Dream (Deduction)", "🔍", models.dream.deduction) : null,
+                models.dream && models.dream.induction ? renderModelSection("Dream (Induction)", "💡", models.dream.induction) : null,
+                // Dialectic levels
+                h("div", { style: { marginTop: 8, marginBottom: 4, fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9" } }, "🗣 Dialectic Levels"),
+                models.dialectic && models.dialectic.minimal ? renderModelSection("Minimal", "○", models.dialectic.minimal.model_config) : null,
+                models.dialectic && models.dialectic.low ? renderModelSection("Low", "◔", models.dialectic.low.model_config) : null,
+                models.dialectic && models.dialectic.medium ? renderModelSection("Medium", "◑", models.dialectic.medium.model_config) : null,
+                models.dialectic && models.dialectic.high ? renderModelSection("High", "◕", models.dialectic.high.model_config) : null,
+                models.dialectic && models.dialectic.max ? renderModelSection("Max", "●", models.dialectic.max.model_config) : null,
+              )
+        )
       );
     }
-
-    if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
-    if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
-      h("div", null, "⚠️ Failed to load configuration"),
-      h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
-      h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry. If this persists, the gateway may need a restart.")
-    );
-
-    return h("div", null,
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-        h("h2", { style: { margin: 0 } }, "Workspace Configuration"),
-        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
-          saveMsg
-            ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text)
-            : null,
-          h("button", { onClick: handleSave, disabled: saving, style: S.btnPrimary },
-            saving ? "Saving…" : "💾 Save Changes")
-        )
-      ),
-
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "🧠 Reasoning"),
-        renderToggle("Enable Reasoning", "reasoning.enabled", "Whether Honcho will use reasoning to form representations and draw conclusions"),
-        renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions for the reasoning system")
-      ),
-
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "👤 Peer Cards"),
-        renderToggle("Use Peer Cards", "peer_card.use", "Whether to use peer cards during the reasoning process"),
-        renderToggle("Create Peer Cards", "peer_card.create", "Whether to generate peer cards based on content")
-      ),
-
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "📝 Summaries"),
-        renderToggle("Enable Summaries", "summary.enabled", "Whether to enable session summary functionality"),
-        renderNumber("Messages per Short Summary", "summary.messages_per_short_summary", "Number of messages before generating a short summary (min 10)", 10, 500),
-        renderNumber("Messages per Long Summary", "summary.messages_per_long_summary", "Number of messages before generating a long summary (min 20)", 20, 1000)
-      ),
-
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "💤 Dream"),
-        renderToggle("Enable Dream", "dream.enabled", "Whether Honcho will run background 'dream' processing")
-      )
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Main App — tab router

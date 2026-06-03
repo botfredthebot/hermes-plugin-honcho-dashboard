@@ -822,3 +822,26 @@ async def update_config(body: dict):
         "configuration": result.get("configuration", {}),
         "metadata": result.get("metadata", {}),
     }
+
+
+# ---------------------------------------------------------------------------
+# Global Config — read Honcho server configuration (models, etc.)
+# ---------------------------------------------------------------------------
+
+@router.get("/global-config")
+async def get_global_config():
+    """Read Honcho server configuration from the container."""
+    import subprocess
+    result = subprocess.run(
+        ["docker", "exec", "honcho-api-1", "python3", "-c",
+         "import json,sys; from src.config import TOML_CONFIG; "
+         "print(json.dumps(TOML_CONFIG, indent=2, default=str))"],
+        capture_output=True, text=True, timeout=10
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=502, detail=f"Failed to read config: {result.stderr[:500]}")
+    try:
+        config = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Invalid config output from container")
+    return config
