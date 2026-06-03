@@ -312,6 +312,8 @@
   function PeersTab() {
     var _u = useState([]), peers = _u[0], setPeers = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), deleteTarget = _u3[0], setDeleteTarget = _u3[1];
+    var _u4 = useState(false), deleting = _u4[0], setDeleting = _u4[1];
 
     function loadPeers() {
       setLoading(true);
@@ -323,10 +325,11 @@
 
     useEffect(function () { loadPeers(); }, []);
 
-    function deletePeer(peerId, peerName) {
-      if (!window.confirm("Delete peer '" + peerName + "' and all associated data?\n\nThis will remove:\n- The peer\n- All messages sent by this peer\n- All documents, collections, and session links\n\nThis cannot be undone.")) {
-        return;
-      }
+    function confirmDelete() {
+      if (!deleteTarget) return;
+      var peerId = deleteTarget.id;
+      var peerName = deleteTarget.name;
+      setDeleting(true);
       fetch(API + "/peer/" + encodeURIComponent(peerId) + "?confirm=true", {
         method: "DELETE",
         headers: authHeaders(),
@@ -334,16 +337,14 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d.success) {
-            alert("Peer '" + peerName + "' deleted.\n\nRemoved: " +
-              (d.deleted.messages || 0) + " messages, " +
-              (d.deleted.documents || 0) + " documents, " +
-              (d.deleted.collections || 0) + " collections.");
+            setDeleteTarget(null);
             loadPeers();
           } else {
             alert("Error: " + (d.detail || "Unknown error"));
           }
         })
-        .catch(function (e) { alert("Delete failed: " + e.message); });
+        .catch(function (e) { alert("Delete failed: " + e.message); })
+        .finally(function () { setDeleting(false); });
     }
 
     return h("div", null,
@@ -356,32 +357,56 @@
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No peers found.")
         : peers.map(function (p) {
             var displayName = p.metadata && p.metadata.name ? p.metadata.name : p.id;
-            return h("div", { key: p.id, style: S.rowCard },
-              h("div", { style: S.rowInner },
-                h("div", { style: S.rowLeft },
-                  h("div", { style: { fontWeight: 600, fontSize: "0.95em", marginBottom: 2 } }, displayName),
-                  h("div", { style: Object.assign({}, S.small, S.mono) }, p.id),
-                  h("div", { style: Object.assign({}, S.small, { marginTop: 4 }) },
-                    "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
-                    " · By: ", h("strong", null, String(p.conclusions_by || 0))
+            var isDeleteTarget = deleteTarget && deleteTarget.id === p.id;
+            return h("div", { key: p.id },
+              h("div", { style: S.rowCard },
+                h("div", { style: S.rowInner },
+                  h("div", { style: S.rowLeft },
+                    h("div", { style: { fontWeight: 600, fontSize: "0.95em", marginBottom: 2 } }, displayName),
+                    h("div", { style: Object.assign({}, S.small, S.mono) }, p.id),
+                    h("div", { style: Object.assign({}, S.small, { marginTop: 4 }) },
+                      "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
+                      " · By: ", h("strong", null, String(p.conclusions_by || 0))
+                    )
+                  ),
+                  h("div", { style: S.rowRight },
+                    h("button", {
+                      title: "View details for '" + displayName + "'",
+                      onClick: function () { window.open("#", "_self"); },
+                      style: S.btnSmall,
+                    }, "👁 View"),
+                    h("button", {
+                      title: "Delete peer '" + displayName + "'",
+                      onClick: function (e) {
+                        e.stopPropagation();
+                        setDeleteTarget({ id: p.id, name: displayName });
+                      },
+                      style: S.btnDelete,
+                    }, "🗑")
                   )
-                ),
-                h("div", { style: S.rowRight },
-                  h("button", {
-                    title: "View details for '" + displayName + "'",
-                    onClick: function () { window.open("#", "_self"); },  // placeholder — could expand inline
-                    style: S.btnSmall,
-                  }, "👁 View"),
-                  h("button", {
-                    title: "Delete peer '" + displayName + "'",
-                    onClick: function (e) {
-                      e.stopPropagation();
-                      deletePeer(p.id, displayName);
-                    },
-                    style: S.btnDelete,
-                  }, "🗑 Delete")
                 )
-              )
+              ),
+              isDeleteTarget
+                ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginTop: -4, marginBottom: 8 }) },
+                    h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Peer Deletion"),
+                    h("div", { style: { marginBottom: 8, fontSize: "0.85em" } },
+                      "Delete peer ", h("strong", null, displayName), " and all associated data?",
+                      h("div", { style: { color: "#8b949e", marginTop: 4, fontSize: "0.82em" } },
+                        "This will remove: the peer, all messages, documents, collections, and session links. This cannot be undone."
+                      )
+                    ),
+                    h("div", { style: { display: "flex", gap: 8 } },
+                      h("button", { onClick: confirmDelete, disabled: deleting, style: S.btnDeleteConfirm },
+                        deleting ? "Deleting…" : "🗑 Yes, Delete"
+                      ),
+                      h("button", {
+                        onClick: function () { setDeleteTarget(null); },
+                        disabled: deleting,
+                        style: S.btn,
+                      }, "Cancel")
+                    )
+                  )
+                : null
             );
           })
     );
@@ -395,10 +420,9 @@
     var _u = useState([]), sessions = _u[0], setSessions = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), expanded = _u3[0], setExpanded = _u3[1];
-    var _u4 = useState(false), showDeleteConfirm = _u4[0], setShowDeleteConfirm = _u4[1];
-    var _u5 = useState(null), deleteTarget = _u5[0], setDeleteTarget = _u5[1];
-    var _u6 = useState(null), deletePreview = _u6[0], setDeletePreview = _u6[1];
-    var _u7 = useState(false), deleting = _u7[0], setDeleting = _u7[1];
+    var _u4 = useState(null), deleteTarget = _u4[0], setDeleteTarget = _u4[1];
+    var _u5 = useState(null), deletePreview = _u5[0], setDeletePreview = _u5[1];
+    var _u6 = useState(false), deleting = _u6[0], setDeleting = _u6[1];
 
     function loadSessions() {
       setLoading(true);
@@ -418,7 +442,7 @@
         headers: authHeaders(),
       })
         .then(function (r) { return r.json(); })
-        .then(function (d) { setDeletePreview(d); setDeleteTarget(sessionId); setShowDeleteConfirm(true); })
+        .then(function (d) { setDeletePreview(d); setDeleteTarget(sessionId); })
         .catch(function (e) { alert("Error: " + e.message); });
     }
 
@@ -436,7 +460,6 @@
               (d.deleted.messages || 0) + " messages, " +
               (d.deleted.message_embeddings || 0) + " embeddings, " +
               (d.deleted.session_peers || 0) + " peer links.");
-            setShowDeleteConfirm(false);
             setDeleteTarget(null);
             setDeletePreview(null);
             loadSessions();
@@ -493,40 +516,6 @@
           : null
       ),
 
-      // Delete confirmation modal
-      showDeleteConfirm
-        ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginBottom: 16 }) },
-            h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Session Deletion"),
-            deletePreview
-              ? h("div", null,
-                  h("div", { style: { marginBottom: 8 } },
-                    "About to delete session: ", h("code", null, deletePreview.session_id)
-                  ),
-                  h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 12 } },
-                    "This will remove:",
-                    h("ul", { style: { margin: "4px 0 0 16px", padding: 0 } },
-                      h("li", null, (deletePreview.will_delete.sessions || 0) + " session"),
-                      h("li", null, (deletePreview.will_delete.messages || 0) + " messages"),
-                      h("li", null, (deletePreview.will_delete.message_embeddings || 0) + " message embeddings"),
-                      h("li", null, (deletePreview.will_delete.session_peers || 0) + " session-peer links"),
-                      h("li", null, (deletePreview.will_delete.documents || 0) + " documents"),
-                    )
-                  ),
-                  h("div", { style: { display: "flex", gap: 8 } },
-                    h("button", { onClick: confirmDelete, disabled: deleting, style: S.btnDeleteConfirm },
-                      deleting ? "Deleting…" : "🗑 Yes, Delete"
-                    ),
-                    h("button", {
-                      onClick: function () { setShowDeleteConfirm(false); setDeleteTarget(null); setDeletePreview(null); },
-                      disabled: deleting,
-                      style: S.btn,
-                    }, "Cancel")
-                  )
-                )
-              : h("div", { style: { color: "#8b949e" } }, "Loading preview…")
-          )
-        : null,
-
       // Session list
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
@@ -535,9 +524,9 @@
         : sessions.map(function (s) {
             var msgCount = s.message_count || 0;
             var isEmpty = msgCount === 0;
-            return h("div", null,
+            var isDeleteTarget = deleteTarget === s.id;
+            return h("div", { key: s.id },
               h("div", {
-                  key: s.id,
                   style: Object.assign({}, S.rowCard, isEmpty ? S.rowCardHighlight : {}),
                 },
                 h("div", { style: S.rowInner },
@@ -565,6 +554,38 @@
                   )
                 )
               ),
+              isDeleteTarget
+                ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginTop: -4, marginBottom: 8 }) },
+                    h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Session Deletion"),
+                    deletePreview
+                      ? h("div", null,
+                          h("div", { style: { marginBottom: 8 } },
+                            "About to delete session: ", h("code", null, deletePreview.session_id)
+                          ),
+                          h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 12 } },
+                            "This will remove:",
+                            h("ul", { style: { margin: "4px 0 0 16px", padding: 0 } },
+                              h("li", null, (deletePreview.will_delete.sessions || 0) + " session"),
+                              h("li", null, (deletePreview.will_delete.messages || 0) + " messages"),
+                              h("li", null, (deletePreview.will_delete.message_embeddings || 0) + " message embeddings"),
+                              h("li", null, (deletePreview.will_delete.session_peers || 0) + " session-peer links"),
+                              h("li", null, (deletePreview.will_delete.documents || 0) + " documents"),
+                            )
+                          ),
+                          h("div", { style: { display: "flex", gap: 8 } },
+                            h("button", { onClick: confirmDelete, disabled: deleting, style: S.btnDeleteConfirm },
+                              deleting ? "Deleting…" : "🗑 Yes, Delete"
+                            ),
+                            h("button", {
+                              onClick: function () { setDeleteTarget(null); setDeletePreview(null); },
+                              disabled: deleting,
+                              style: S.btn,
+                            }, "Cancel")
+                          )
+                        )
+                      : h("div", { style: { color: "#8b949e" } }, "Loading preview…")
+                  )
+                : null,
               expanded === s.id ? h(SessionMessages, { sessionId: s.id }) : null
             );
           })
@@ -610,8 +631,7 @@
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(""), filterPeer = _u3[0], setFilterPeer = _u3[1];
     var _u4 = useState([]), allPeers = _u4[0], setAllPeers = _u4[1];
-    var _u5 = useState(false), showDeleteConfirm = _u5[0], setShowDeleteConfirm = _u5[1];
-    var _u6 = useState(null), deleteTarget = _u6[0], setDeleteTarget = _u6[1];
+    var _u5 = useState(null), deleteTarget = _u5[0], setDeleteTarget = _u5[1];
 
     // Load conclusions (filtered)
     function loadConclusions() {
@@ -644,7 +664,6 @@
         .then(function (d) {
           if (d.success) {
             alert("Conclusion deleted.");
-            setShowDeleteConfirm(false);
             setDeleteTarget(null);
             loadConclusions();
           } else {
@@ -676,52 +695,49 @@
         filterPeer ? h("button", { onClick: function () { setFilterPeer(""); }, style: S.btn }, "✕ Clear") : null
       ),
 
-      // Delete confirmation modal
-      showDeleteConfirm
-        ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginBottom: 16 }) },
-            h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Deletion"),
-            deleteTarget
-              ? h("div", null,
-                  h("div", { style: { marginBottom: 8, fontSize: "0.85em" } },
-                    "Delete this conclusion?",
-                    h("div", { style: { color: "#8b949e", marginTop: 4 } },
-                      truncate(deleteTarget.content || "", 200)
-                    )
-                  ),
-                  h("div", { style: { display: "flex", gap: 8 } },
-                    h("button", { onClick: confirmDelete, style: S.btnDeleteConfirm }, "🗑 Yes, Delete"),
-                    h("button", {
-                      onClick: function () { setShowDeleteConfirm(false); setDeleteTarget(null); },
-                      style: S.btn,
-                    }, "Cancel")
-                  )
-                )
-              : null
-          )
-        : null,
-
       // Conclusions list
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
         : conclusions.length === 0
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No conclusions found.")
         : conclusions.map(function (c, i) {
-            return h("div", { key: c.id || String(i), style: S.rowCard },
-              h("div", { style: S.rowInner },
-                h("div", { style: S.rowLeft },
-                  h("div", { style: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 6 } }, c.content || ""),
-                  h("div", { style: { fontSize: "0.75em", color: "#8b949e" } },
-                    (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
+            var isDeleteTarget = deleteTarget && deleteTarget.id === c.id;
+            return h("div", { key: c.id || String(i) },
+              h("div", { style: S.rowCard },
+                h("div", { style: S.rowInner },
+                  h("div", { style: S.rowLeft },
+                    h("div", { style: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 6 } }, c.content || ""),
+                    h("div", { style: { fontSize: "0.75em", color: "#8b949e" } },
+                      (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
+                    )
+                  ),
+                  h("div", { style: S.rowRight },
+                    h("button", {
+                      onClick: function () { setDeleteTarget(c); },
+                      style: S.btnDelete,
+                      title: "Delete this conclusion"
+                    }, "🗑")
                   )
-                ),
-                h("div", { style: S.rowRight },
-                  h("button", {
-                    onClick: function () { setDeleteTarget(c); setShowDeleteConfirm(true); },
-                    style: S.btnDelete,
-                    title: "Delete this conclusion"
-                  }, "🗑")
                 )
-              )
+              ),
+              isDeleteTarget
+                ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginTop: -4, marginBottom: 8 }) },
+                    h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Deletion"),
+                    h("div", { style: { marginBottom: 8, fontSize: "0.85em" } },
+                      "Delete this conclusion?",
+                      h("div", { style: { color: "#8b949e", marginTop: 4 } },
+                        truncate(c.content || "", 200)
+                      )
+                    ),
+                    h("div", { style: { display: "flex", gap: 8 } },
+                      h("button", { onClick: confirmDelete, style: S.btnDeleteConfirm }, "🗑 Yes, Delete"),
+                      h("button", {
+                        onClick: function () { setDeleteTarget(null); },
+                        style: S.btn,
+                      }, "Cancel")
+                    )
+                  )
+                : null
             );
           })
     );
