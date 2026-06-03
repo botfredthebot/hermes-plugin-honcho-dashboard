@@ -37,8 +37,19 @@
       headers["Authorization"] = "Bearer " + token;
     }
     return fetch(url, { headers: headers }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
+      if (!r.ok) {
+        return r.text().then(function (body) {
+          var parsed;
+          try { parsed = JSON.parse(body); } catch (e) {}
+          if (parsed && parsed.detail) throw new Error("HTTP " + r.status + ": " + parsed.detail);
+          throw new Error("HTTP " + r.status + ": " + body.slice(0, 200));
+        });
+      }
+      return r.text().then(function (body) {
+        if (!body || !body.trim()) return {};
+        try { return JSON.parse(body); } catch (e) {}
+        throw new Error("Invalid JSON response from server");
+      });
     });
   }
 
@@ -1102,7 +1113,11 @@
     }
 
     if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
-    if (error) return h("div", { style: { padding: 40, color: "#f85149" }, onClick: loadConfig }, "⚠️ " + error + " (click to retry)");
+    if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
+      h("div", null, "⚠️ Failed to load configuration"),
+      h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
+      h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry. If this persists, the gateway may need a restart.")
+    );
 
     return h("div", null,
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
