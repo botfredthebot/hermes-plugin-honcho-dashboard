@@ -974,7 +974,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Config Tab — global settings + workspace overrides
+  // Config Tab — editable global settings + workspace overrides
   // ---------------------------------------------------------------------------
 
   function ConfigTab() {
@@ -985,10 +985,12 @@
     var _u5 = useState(null), saveMsg = _u5[0], setSaveMsg = _u5[1];
     var _u6 = useState(null), globalConfig = _u6[0], setGlobalConfig = _u6[1];
     var _u7 = useState(true), globalLoading = _u7[0], setGlobalLoading = _u7[1];
+    var _u8 = useState(false), globalSaving = _u8[0], setGlobalSaving = _u8[1];
+    var _u9 = useState(null), globalSaveMsg = _u9[0], setGlobalSaveMsg = _u9[1];
+    var _u10 = useState({}), editedGlobal = _u10[0], setEditedGlobal = _u10[1];
 
     function loadConfig() {
-      setLoading(true);
-      setError(null);
+      setLoading(true); setError(null);
       fetchJSON(API + "/config")
         .then(function (d) { setConfig(d); })
         .catch(function (e) { setError(e.message); })
@@ -998,7 +1000,7 @@
     function loadGlobalConfig() {
       setGlobalLoading(true);
       fetchJSON(API + "/global-config")
-        .then(function (d) { setGlobalConfig(d); })
+        .then(function (d) { setGlobalConfig(d); setEditedGlobal({}); })
         .catch(function () { /* best-effort */ })
         .finally(function () { setGlobalLoading(false); });
     }
@@ -1007,8 +1009,7 @@
 
     function getNested(obj, path) {
       if (!obj) return undefined;
-      var parts = path.split(".");
-      var cur = obj;
+      var parts = path.split("."), cur = obj;
       for (var i = 0; i < parts.length; i++) {
         if (cur == null || typeof cur !== "object") return undefined;
         cur = cur[parts[i]];
@@ -1016,20 +1017,15 @@
       return cur;
     }
 
-    function setNested(obj, path, value) {
-      var parts = path.split(".");
-      var cur = obj;
-      for (var i = 0; i < parts.length - 1; i++) {
-        if (!cur[parts[i]] || typeof cur[parts[i]] !== "object") cur[parts[i]] = {};
-        cur = cur[parts[i]];
-      }
-      cur[parts[parts.length - 1]] = value;
+    function getGlobalValue(path) {
+      if (editedGlobal[path] !== undefined) return editedGlobal[path];
+      return getNested(globalConfig, path);
     }
 
     function getEffective(wsPath, globalPath) {
       var wsVal = getNested(config && config.configuration, wsPath);
       if (wsVal !== undefined && wsVal !== null) return wsVal;
-      return getNested(globalConfig, globalPath);
+      return getGlobalValue(globalPath);
     }
 
     function isOverridden(wsPath) {
@@ -1037,16 +1033,26 @@
       return wsVal !== undefined && wsVal !== null;
     }
 
-    function updateField(path, value) {
+    function updateEditedGlobal(path, value) {
+      var next = Object.assign({}, editedGlobal);
+      next[path] = value;
+      setEditedGlobal(next);
+    }
+
+    function updateWorkspaceField(path, value) {
       var newConfig = JSON.parse(JSON.stringify(config || {}));
-      setNested(newConfig.configuration || (newConfig.configuration = {}), path, value);
+      var parts = path.split("."), obj = newConfig.configuration || (newConfig.configuration = {});
+      for (var i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]] || typeof obj[parts[i]] !== "object") obj[parts[i]] = {};
+        obj = obj[parts[i]];
+      }
+      obj[parts[parts.length - 1]] = value;
       setConfig(newConfig);
     }
 
-    function handleSave() {
+    function handleSaveWorkspace() {
       if (!config) return;
-      setSaving(true);
-      setSaveMsg(null);
+      setSaving(true); setSaveMsg(null);
       fetch(API + "/config", {
         method: "PUT",
         headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
@@ -1054,38 +1060,66 @@
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d.success) { setSaveMsg({ type: "ok", text: "Saved." }); loadConfig(); }
+          if (d.success) { setSaveMsg({ type: "ok", text: "Workspace config saved." }); loadConfig(); }
           else { setSaveMsg({ type: "err", text: (d.detail || "Save failed") }); }
         })
         .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
         .finally(function () { setSaving(false); });
     }
 
-    function renderToggle(label, wsPath, globalPath, description) {
-      var effective = getEffective(wsPath, globalPath);
-      var isOn = effective === true;
-      var overridden = isOverridden(wsPath);
-      var globalVal = getNested(globalConfig, globalPath);
-      var isGreyed = !overridden && globalVal != null;
-      var badge = isGreyed
-        ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global")
-        : overridden
-        ? h("span", { style: { fontSize: "0.7em", color: "#d29922", marginLeft: 6, fontWeight: 400 } }, "— overridden")
-        : null;
-      return h("div", { style: { marginBottom: 16, opacity: isGreyed ? 0.55 : 1 } },
+    function handleSaveGlobal() {
+      if (Object.keys(editedGlobal).length === 0) {
+        setGlobalSaveMsg({ type: "err", text: "No changes to save." });
+        return;
+      }
+      setGlobalSaving(true); setGlobalSaveMsg(null);
+      fetch(API + "/global-config", {
+        method: "PUT",
+        headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
+        body: JSON.stringify(editedGlobal),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            setGlobalSaveMsg({ type: "ok", text: "Global config saved. Service restarting…" });
+            setEditedGlobal({});
+            setTimeout(function () { loadGlobalConfig(); }, 3000);
+          } else { setGlobalSaveMsg({ type: "err", text: (d.detail || "Save failed") }); }
+        })
+        .catch(function (e) { setGlobalSaveMsg({ type: "err", text: e.message }); })
+        .finally(function () { setGlobalSaving(false); });
+    }
+
+    function renderToggle(label, path, isWorkspace, description) {
+      var isOn, isGreyed, badge, titleText, onClick;
+      if (isWorkspace) {
+        var effective = getEffective(path, path);
+        isOn = effective === true;
+        var overridden = isOverridden(path);
+        var gVal = getGlobalValue(path);
+        isGreyed = !overridden && gVal != null;
+        badge = isGreyed
+          ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global")
+          : overridden
+          ? h("span", { style: { fontSize: "0.7em", color: "#d29922", marginLeft: 6, fontWeight: 400 } }, "— overridden")
+          : null;
+        titleText = isGreyed ? "Global: " + (isOn ? "ON" : "OFF") + ". Click to override." : (isOn ? "ON" : "OFF") + " — click to toggle";
+        onClick = function () { updateWorkspaceField(path, !isOn); };
+      } else {
+        isOn = getGlobalValue(path) === true;
+        isGreyed = false; badge = null;
+        titleText = (isOn ? "ON" : "OFF") + " — click to toggle";
+        onClick = function () { updateEditedGlobal(path, !isOn); };
+      }
+      return h("div", { style: { marginBottom: 14, opacity: isGreyed ? 0.5 : 1 } },
         h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
           h("div", null,
             h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label, badge),
             description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
           ),
-          h("button", {
-            onClick: function () { updateField(wsPath, !isOn); },
-            title: isGreyed ? "Global default: " + (isOn ? "ON" : "OFF") + ". Click to override." : (isOn ? "ON" : "OFF") + " — click to toggle",
-            style: {
-              width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
-              background: isOn ? "#238636" : "#30363d",
-              position: "relative", padding: 0, transition: "background 0.2s",
-            },
+          h("button", { onClick: onClick, title: titleText,
+            style: { width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+              background: isOn ? "#238636" : "#30363d", position: "relative", padding: 0, transition: "background 0.2s" },
           },
             h("div", { style: { width: 20, height: 20, borderRadius: 10, background: "#fff", position: "absolute", top: 3, left: isOn ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" } })
           )
@@ -1093,22 +1127,28 @@
       );
     }
 
-    function renderNumber(label, wsPath, globalPath, description, min, max) {
-      var wsVal = getNested(config && config.configuration, wsPath);
-      var globalVal = getNested(globalConfig, globalPath);
-      var overridden = isOverridden(wsPath);
-      var isGreyed = !overridden && globalVal != null;
-      var val = (wsVal != null) ? wsVal : (globalVal != null ? globalVal : "");
-      return h("div", { style: { marginBottom: 16, opacity: isGreyed ? 0.55 : 1 } },
+    function renderNumber(label, path, isWorkspace, description, min, max) {
+      var val, onChange, isGreyed, badge;
+      if (isWorkspace) {
+        var wsVal = getNested(config && config.configuration, path);
+        var gVal = getGlobalValue(path);
+        var overridden = isOverridden(path);
+        isGreyed = !overridden && gVal != null;
+        val = (wsVal != null) ? wsVal : (gVal != null ? gVal : "");
+        onChange = function (e) { var v = parseInt(e.target.value, 10); if (!isNaN(v)) updateWorkspaceField(path, v); };
+        badge = isGreyed ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global") : null;
+      } else {
+        val = getGlobalValue(path); val = (val != null) ? val : "";
+        onChange = function (e) { var v = parseInt(e.target.value, 10); if (!isNaN(v)) updateEditedGlobal(path, v); };
+        isGreyed = false; badge = null;
+      }
+      return h("div", { style: { marginBottom: 14, opacity: isGreyed ? 0.5 : 1 } },
         h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
           h("div", null,
-            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label,
-              isGreyed ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global") : null
-            ),
+            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label, badge),
             description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
           ),
-          h("input", { type: "number", min: min, max: max, value: val,
-            onChange: function (e) { var v = parseInt(e.target.value, 10); if (!isNaN(v)) updateField(wsPath, v); },
+          h("input", { type: "number", min: min, max: max, value: val, onChange: onChange,
             style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
           })
         )
@@ -1117,19 +1157,10 @@
 
     function renderTextarea(label, path, description) {
       var val = getNested(config && config.configuration, path) || "";
-      return h("div", { style: { marginBottom: 16 } },
+      return h("div", { style: { marginBottom: 14 } },
         h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
         description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
-        h("textarea", { value: val, onChange: function (e) { updateField(path, e.target.value); }, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea })
-      );
-    }
-
-    function renderGlobalRow(label, value) {
-      var display = value == null ? "—" : String(value);
-      if (typeof value === "boolean") display = value ? "✓ true" : "✗ false";
-      return h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #21262d" } },
-        h("span", { style: { fontSize: "0.8em", color: "#8b949e" } }, label),
-        h("span", { style: { fontSize: "0.8em", fontFamily: "monospace", color: "#c9d1d9" } }, display)
+        h("textarea", { value: val, onChange: function (e) { updateWorkspaceField(path, e.target.value); }, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea })
       );
     }
 
@@ -1161,133 +1192,118 @@
       };
     }
 
-    if (loading && !config) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
+    if (loading && !config) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading…");
     if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
-      h("div", null, "⚠️ Failed to load configuration"),
-      h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
+      h("div", null, "⚠️ Failed to load"), h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
       h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry.")
     );
 
     var models = extractModels(globalConfig);
-    var gc = globalConfig || {};
-    var deriver = gc.deriver || {};
-    var dialectic = gc.dialectic || {};
-    var summary = gc.summary || {};
-    var dream = gc.dream || {};
-    var embedding = gc.embedding || {};
-    var cache = gc.cache || {};
-    var llm = gc.llm || {};
-    var app = gc.app || {};
-    var peerCard = gc.peer_card || {};
-    var vectorStore = gc.vector_store || {};
-    var auth = gc.auth || {};
+    var hasGlobalEdits = Object.keys(editedGlobal).length > 0;
 
     return h("div", null,
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-        h("h2", { style: { margin: 0 } }, "Configuration"),
-        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
-          saveMsg ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text) : null,
-          h("button", { onClick: handleSave, disabled: saving, style: S.btnPrimary }, saving ? "Saving…" : "💾 Save Changes")
-        )
+        h("h2", { style: { margin: 0 } }, "Configuration")
       ),
 
       // ── GLOBAL SETTINGS ─────────────────────────────────────────────
       h("div", { style: S.section },
         h("div", { style: S.sectionTitle }, "🌐 Global Settings"),
-        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Server-level defaults from config.toml. Read-only."),
-
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "⚡ Deriver"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Enabled", deriver.ENABLED), renderGlobalRow("Workers", deriver.WORKERS),
-            renderGlobalRow("Polling interval", deriver.POLLING_SLEEP_INTERVAL_SECONDS + "s"),
-            renderGlobalRow("Stale timeout", deriver.STALE_SESSION_TIMEOUT_MINUTES + " min"),
-            renderGlobalRow("Deduplicate", deriver.DEDUPLICATE),
-            renderGlobalRow("Max input tokens", deriver.MAX_INPUT_TOKENS),
-            renderGlobalRow("Flush enabled", deriver.FLUSH_ENABLED)
+        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Server-level defaults. Changes restart the Honcho service."),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 14 } },
+          globalSaveMsg ? h("span", { style: { fontSize: "0.78em", color: globalSaveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, globalSaveMsg.text) : null,
+          h("button", { onClick: handleSaveGlobal, disabled: globalSaving || !hasGlobalEdits, style: hasGlobalEdits ? S.btnPrimary : S.btn },
+            globalSaving ? "Saving…" : (hasGlobalEdits ? "💾 Save Global Changes" : "No changes")
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🗣 Dialectic"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Max output tokens", dialectic.MAX_OUTPUT_TOKENS),
-            renderGlobalRow("Max input tokens", dialectic.MAX_INPUT_TOKENS),
-            renderGlobalRow("History token limit", dialectic.HISTORY_TOKEN_LIMIT)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "⚡ Deriver"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderToggle("Enabled", "deriver.ENABLED", false),
+            renderNumber("Workers", "deriver.WORKERS", false, null, 1, 20),
+            renderNumber("Polling interval (s)", "deriver.POLLING_SLEEP_INTERVAL_SECONDS", false, null, 0.1, 60),
+            renderNumber("Stale timeout (min)", "deriver.STALE_SESSION_TIMEOUT_MINUTES", false, null, 1, 60),
+            renderToggle("Deduplicate", "deriver.DEDUPLICATE", false),
+            renderToggle("Flush enabled", "deriver.FLUSH_ENABLED", false)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "📝 Summary"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Enabled", summary.ENABLED),
-            renderGlobalRow("Messages per short", summary.MESSAGES_PER_SHORT_SUMMARY),
-            renderGlobalRow("Messages per long", summary.MESSAGES_PER_LONG_SUMMARY)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🗣 Dialectic"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderNumber("Max output tokens", "dialectic.MAX_OUTPUT_TOKENS", false, null, 256, 32768),
+            renderNumber("Max input tokens", "dialectic.MAX_INPUT_TOKENS", false, null, 1000, 200000),
+            renderNumber("History token limit", "dialectic.HISTORY_TOKEN_LIMIT", false, null, 1000, 24000)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "💤 Dream"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Enabled", dream.ENABLED),
-            renderGlobalRow("Document threshold", dream.DOCUMENT_THRESHOLD),
-            renderGlobalRow("Idle timeout", dream.IDLE_TIMEOUT_MINUTES + " min"),
-            renderGlobalRow("Min hours between", dream.MIN_HOURS_BETWEEN_DREAMS + "h"),
-            renderGlobalRow("Max tool iterations", dream.MAX_TOOL_ITERATIONS)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "📝 Summary"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderToggle("Enabled", "summary.ENABLED", false),
+            renderNumber("Messages per short", "summary.MESSAGES_PER_SHORT_SUMMARY", false, "Min 10", 10, 500),
+            renderNumber("Messages per long", "summary.MESSAGES_PER_LONG_SUMMARY", false, "Min 20", 20, 1000)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "👤 Peer Cards"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Enabled", peerCard.ENABLED)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "💤 Dream"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderToggle("Enabled", "dream.ENABLED", false),
+            renderNumber("Document threshold", "dream.DOCUMENT_THRESHOLD", false, null, 10, 1000),
+            renderNumber("Idle timeout (min)", "dream.IDLE_TIMEOUT_MINUTES", false, null, 5, 480),
+            renderNumber("Min hours between", "dream.MIN_HOURS_BETWEEN_DREAMS", false, null, 1, 72),
+            renderNumber("Max tool iterations", "dream.MAX_TOOL_ITERATIONS", false, null, 1, 50)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🔢 Embedding"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Vector dimensions", embedding.VECTOR_DIMENSIONS),
-            renderGlobalRow("Max input tokens", embedding.MAX_INPUT_TOKENS),
-            renderGlobalRow("Provider", llm.EMBEDDING_PROVIDER)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "👤 Peer Cards"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderToggle("Enabled", "peer_card.ENABLED", false)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "💾 Cache"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Enabled", cache.ENABLED),
-            renderGlobalRow("Default TTL", cache.DEFAULT_TTL_SECONDS + "s")
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🔢 Embedding"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderNumber("Vector dimensions", "embedding.VECTOR_DIMENSIONS", false, null, 128, 3072),
+            renderNumber("Max input tokens", "embedding.MAX_INPUT_TOKENS", false, null, 512, 32768)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "⚙️ App"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Log level", app.LOG_LEVEL),
-            renderGlobalRow("Session observers limit", app.SESSION_OBSERVERS_LIMIT),
-            renderGlobalRow("Max file size", app.MAX_FILE_SIZE),
-            renderGlobalRow("Max message size", app.MAX_MESSAGE_SIZE),
-            renderGlobalRow("Embed messages", app.EMBED_MESSAGES)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "💾 Cache"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderToggle("Enabled", "cache.ENABLED", false),
+            renderNumber("Default TTL (s)", "cache.DEFAULT_TTL_SECONDS", false, null, 30, 3600)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🔐 Auth"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Use auth", auth.USE_AUTH)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "⚙️ App"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderNumber("Session observers limit", "app.SESSION_OBSERVERS_LIMIT", false, null, 1, 50),
+            renderToggle("Embed messages", "app.EMBED_MESSAGES", false)
           )
         ),
 
         h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🗄 Vector Store"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
-            renderGlobalRow("Type", vectorStore.TYPE),
-            renderGlobalRow("Dimensions", vectorStore.DIMENSIONS)
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🔐 Auth"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderToggle("Use auth", "auth.USE_AUTH", false)
           )
         ),
 
-        // ── Models subsection ──
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🗄 Vector Store"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+            renderNumber("Dimensions", "vector_store.DIMENSIONS", false, null, 128, 3072)
+          )
+        ),
+
+        // Models subsection
         h("div", { style: { marginTop: 16, marginBottom: 8, fontWeight: 600, fontSize: "0.9em", color: "#c9d1d9" } }, "🤖 Models"),
         models.deriver ? renderModelCard("Deriver", "⚡", models.deriver) : null,
         models.summary ? renderModelCard("Summary", "📝", models.summary) : null,
@@ -1306,22 +1322,26 @@
       // ── WORKSPACE OVERRIDES ──────────────────────────────────────────
       h("div", { style: S.section },
         h("div", { style: S.sectionTitle }, "🔧 Workspace Overrides"),
-        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Override global defaults for this workspace. Greyed-out = using global default."),
+        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Override global defaults. Greyed-out = using global default."),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 14 } },
+          saveMsg ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text) : null,
+          h("button", { onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary }, saving ? "Saving…" : "💾 Save Workspace Overrides")
+        ),
 
-        renderToggle("Enable Reasoning", "reasoning.enabled", "deriver.ENABLED", "Override global deriver setting"),
-        renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions for reasoning"),
+        renderToggle("Enable Reasoning", "reasoning.enabled", true, "Override global deriver setting"),
+        renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions"),
 
-        h("div", { style: { marginTop: 12, marginBottom: 8, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Peer Cards"),
-        renderToggle("Use Peer Cards", "peer_card.use", "peer_card.ENABLED", "Override global peer card setting"),
-        renderToggle("Create Peer Cards", "peer_card.create", "peer_card.ENABLED", "Override global peer card creation"),
+        h("div", { style: { marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Peer Cards"),
+        renderToggle("Use Peer Cards", "peer_card.use", true, "Override global peer card setting"),
+        renderToggle("Create Peer Cards", "peer_card.create", true, "Override global peer card creation"),
 
-        h("div", { style: { marginTop: 12, marginBottom: 8, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Summaries"),
-        renderToggle("Enable Summaries", "summary.enabled", "summary.ENABLED", "Override global summary setting"),
-        renderNumber("Messages per Short", "summary.messages_per_short_summary", "summary.MESSAGES_PER_SHORT_SUMMARY", "Min 10", 10, 500),
-        renderNumber("Messages per Long", "summary.messages_per_long_summary", "summary.MESSAGES_PER_LONG_SUMMARY", "Min 20", 20, 1000),
+        h("div", { style: { marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Summaries"),
+        renderToggle("Enable Summaries", "summary.enabled", true, "Override global summary setting"),
+        renderNumber("Messages per Short", "summary.messages_per_short_summary", true, "Min 10", 10, 500),
+        renderNumber("Messages per Long", "summary.messages_per_long_summary", true, "Min 20", 20, 1000),
 
-        h("div", { style: { marginTop: 12, marginBottom: 8, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Dream"),
-        renderToggle("Enable Dream", "dream.enabled", "dream.ENABLED", "Override global dream setting")
+        h("div", { style: { marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Dream"),
+        renderToggle("Enable Dream", "dream.enabled", true, "Override global dream setting")
       )
     );
   }

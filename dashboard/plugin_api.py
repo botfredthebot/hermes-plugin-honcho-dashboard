@@ -845,3 +845,86 @@ async def get_global_config():
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Invalid config output from container")
     return config
+
+
+@router.put("/global-config")
+async def update_global_config(body: dict):
+    """
+    Update Honcho server global configuration.
+    Writes the provided values into the container's config.toml and restarts the service.
+    """
+    import subprocess, json, re
+
+    # Read current TOML
+    result = subprocess.run(
+        ["docker", "exec", "honcho-api-1", "cat", "/app/config.toml"],
+        capture_output=True, text=True, timeout=10
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=502, detail=f"Failed to read config.toml: {result.stderr[:500]}")
+    toml_content = result.stdout
+
+    # Apply updates — body is a flat dict like {"deriver.ENABLED": true, "summary.MESSAGES_PER_SHORT_SUMMARY": 60}
+    for key, value in body.items():
+        parts = key.split(".")
+        if len(parts) < 2:
+            continue
+        section = parts[0]
+        field = parts[1]
+        # Convert value to TOML representation
+        if isinstance(value, bool):
+            toml_val = "true" if value else "false"
+        elif isinstance(value, (int, float)):
+            toml_val = str(value)
+        elif isinstance(value, str):
+            toml_val = '"' + value.replace('"', '\\"') + '"'
+        else:
+            toml_val = str(value)
+
+        # Try to find and replace the line in the appropriate section
+        section_pattern = r'\[' + re.escape(section) + r'\]'
+        field_pattern = r'^(\s*' + re.escape(field) + r'\s*=\s*)[^\s#]+'
+
+        # Find the section
+        section_match = re.search(section_pattern, toml_content, re.MULTILINE)
+        if not section_match:
+            # Section doesn't exist, add it at the end
+            toml_content += f"\n[{section}]\n{field} = {toml_val}\n"
+        else:
+            # Find the field within the section
+            section_start = section_match.end()
+            # Find the next section header or end of file
+            next_section = re.search(r'\n\[', toml_content[section_start:])
+            section_end = section_start + next_section.start() if next_section else len(toml_content)
+            section_text = toml_content[section_start:section_end]
+
+            field_re = re.compile(field_pattern, re.MULTILINE)
+            if field_re.search(section_text):
+                # Replace existing value
+                new_section_text = field_re.sub(r'\g<1>' + toml_val, section_text)
+                toml_content = toml_content[:section_start] + new_section_text + toml_content[section_end:]
+            else:
+                # Field doesn't exist in section, add it
+                toml_content = toml_content[:section_end] + f"{field} = {toml_val}\n" + toml_content[section_end:]
+
+    # Write updated TOML back
+    # Use a temp file approach
+    import base64
+    encoded = base64.b64encode(toml_content.encode()).decode()
+    result = subprocess.run(
+        ["docker", "exec", "honcho-api-1", "bash", "-c",
+         f"echo '{encoded}' | base64 -d > /app/config.toml"],
+        capture_output=True, text=True, timeout=10
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=502, detail=f"Failed to write config.toml: {result.stderr[:500]}")
+
+    # Restart the Honcho API container to pick up new config
+    result = subprocess.run(
+        ["docker", "restart", "honcho-api-1"],
+        capture_output=True, text=True, timeout=30
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=502, detail=f"Config saved but restart failed: {result.stderr[:500]}")
+
+    return {"success": True, "message": "Global config updated and service restarted."}
