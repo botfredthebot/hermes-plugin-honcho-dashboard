@@ -255,6 +255,7 @@
     var _u = useState([]), peers = _u[0], setPeers = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), selectedPeer = _u3[0], setSelectedPeer = _u3[1];
+    var _u4 = useState(null), dbStatus = _u4[0], setDbStatus = _u4[1];
 
     function loadPeers() {
       setLoading(true);
@@ -264,7 +265,13 @@
         .finally(function () { setLoading(false); });
     }
 
-    useEffect(function () { loadPeers(); }, []);
+    function checkDbStatus() {
+      fetchJSON(API + "/db-status")
+        .then(function (d) { setDbStatus(d); })
+        .catch(function () { setDbStatus({connected: false, error: "API unreachable"}); });
+    }
+
+    useEffect(function () { loadPeers(); checkDbStatus(); }, []);
 
     function deletePeer(peerId, peerName) {
       if (!window.confirm("Delete peer '" + peerName + "' and all associated data?\n\nThis will remove:\n- The peer\n- All messages sent by this peer\n- All documents, collections, and session links\n\nThis cannot be undone.")) {
@@ -298,6 +305,26 @@
 
     return h("div", { style: S.twoPane },
       h("div", { style: S.leftPane },
+        // DB Status indicator
+        h("div", {
+            style: {
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 10px", marginBottom: 10, borderRadius: 6,
+              background: dbStatus && dbStatus.connected ? "#0d2b1b" : "#2b0d0d",
+              border: "1px solid " + (dbStatus && dbStatus.connected ? "#2ea043" : "#f85149"),
+              fontSize: "0.72em", color: dbStatus && dbStatus.connected ? "#3fb950" : "#f85149",
+            },
+          },
+          h("span", null, dbStatus && dbStatus.connected ? "🟢" : "🔴"),
+          dbStatus
+            ? h("span", null,
+                dbStatus.connected
+                  ? "DB connected — " + dbStatus.host + ":" + dbStatus.port
+                  : "DB error — " + (dbStatus.error || "unknown")
+              )
+            : h("span", null, "Checking DB…")
+        ),
+        h("div", { style: { fontWeight: 600, fontSize: "0.92em", color: "#8b949e", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" } }, "Peers (" + peers.length + ")"),
         loading
           ? h("div", { style: { color: "#8b949e" } }, "Loading…")
           : peers.map(function (p) {

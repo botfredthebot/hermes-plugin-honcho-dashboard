@@ -499,6 +499,30 @@ DB_USER = _os.environ.get("HONCHO_DB_USER", "honcho")
 DB_PASS = _os.environ.get("HONCHO_DB_PASS", "honcho")
 
 
+def _db_status() -> dict:
+    """Check database connectivity and return status info."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
+            user=DB_USER, password=DB_PASS, connect_timeout=5,
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT NOW()")
+        cur.fetchone()
+        cur.close()
+        conn.close()
+        return {"connected": True, "host": DB_HOST, "port": DB_PORT, "database": DB_NAME}
+    except Exception as e:
+        return {"connected": False, "host": DB_HOST, "port": DB_PORT, "database": DB_NAME, "error": str(e)}
+
+
+@router.get("/db-status")
+async def db_status():
+    """Return database connection status for dashboard display."""
+    return _db_status()
+
+
 def _db_connect():
     """Get a PostgreSQL connection to the Honcho database."""
     import psycopg2
