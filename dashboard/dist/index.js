@@ -963,6 +963,186 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Config Tab — view and edit Honcho workspace configuration
+  // ---------------------------------------------------------------------------
+
+  function ConfigTab() {
+    var _u = useState(null), config = _u[0], setConfig = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
+    var _u4 = useState(false), saving = _u4[0], setSaving = _u4[1];
+    var _u5 = useState(null), saveMsg = _u5[0], setSaveMsg = _u5[1];
+
+    function loadConfig() {
+      setLoading(true);
+      setError(null);
+      fetchJSON(API + "/config")
+        .then(function (d) { setConfig(d); })
+        .catch(function (e) { setError(e.message); })
+        .finally(function () { setLoading(false); });
+    }
+
+    useEffect(function () { loadConfig(); }, []);
+
+    function updateField(path, value) {
+      // path like "reasoning.enabled" or "summary.messages_per_short_summary"
+      var parts = path.split(".");
+      var newConfig = JSON.parse(JSON.stringify(config || {}));
+      var obj = newConfig.configuration = newConfig.configuration || {};
+      for (var i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]] || typeof obj[parts[i]] !== "object") {
+          obj[parts[i]] = {};
+        }
+        obj = obj[parts[i]];
+      }
+      obj[parts[parts.length - 1]] = value;
+      setConfig(newConfig);
+    }
+
+    function handleSave() {
+      if (!config) return;
+      setSaving(true);
+      setSaveMsg(null);
+      fetch(API + "/config", {
+        method: "PUT",
+        headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
+        body: JSON.stringify({ configuration: config.configuration || {} }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            setSaveMsg({ type: "ok", text: "Configuration saved successfully." });
+            // Reload to get fresh config
+            loadConfig();
+          } else {
+            setSaveMsg({ type: "err", text: (d.detail || "Save failed") });
+          }
+        })
+        .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
+        .finally(function () { setSaving(false); });
+    }
+
+    function renderToggle(label, path, description) {
+      var parts = path.split(".");
+      var cfg = (config && config.configuration) || {};
+      for (var i = 0; i < parts.length; i++) {
+        if (!cfg || typeof cfg !== "object") { cfg = null; break; }
+        cfg = cfg[parts[i]];
+      }
+      var isOn = cfg === true;
+      var isOff = cfg === false;
+      return h("div", { style: { marginBottom: 16 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("div", null,
+            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
+            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+          ),
+          h("div", { style: { display: "flex", gap: 6 } },
+            h("button", {
+              onClick: function () { updateField(path, true); },
+              style: Object.assign({}, S.btn, isOn ? { background: "#238636", borderColor: "#2ea043", color: "#fff" } : {}),
+            }, "On"),
+            h("button", {
+              onClick: function () { updateField(path, false); },
+              style: Object.assign({}, S.btn, isOff ? { background: "#f85149", borderColor: "#f85149", color: "#fff" } : {}),
+            }, "Off")
+          )
+        )
+      );
+    }
+
+    function renderNumber(label, path, description, min, max) {
+      var parts = path.split(".");
+      var cfg = (config && config.configuration) || {};
+      for (var i = 0; i < parts.length; i++) {
+        if (!cfg || typeof cfg !== "object") { cfg = null; break; }
+        cfg = cfg[parts[i]];
+      }
+      var val = (cfg != null) ? cfg : "";
+      return h("div", { style: { marginBottom: 16 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("div", null,
+            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
+            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+          ),
+          h("input", {
+            type: "number",
+            min: min,
+            max: max,
+            value: val,
+            onChange: function (e) {
+              var v = parseInt(e.target.value, 10);
+              if (!isNaN(v)) updateField(path, v);
+            },
+            style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
+          })
+        )
+      );
+    }
+
+    function renderTextarea(label, path, description) {
+      var parts = path.split(".");
+      var cfg = (config && config.configuration) || {};
+      for (var i = 0; i < parts.length; i++) {
+        if (!cfg || typeof cfg !== "object") { cfg = null; break; }
+        cfg = cfg[parts[i]];
+      }
+      var val = (cfg != null) ? cfg : "";
+      return h("div", { style: { marginBottom: 16 } },
+        h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
+        description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
+        h("textarea", {
+          value: val,
+          onChange: function (e) { updateField(path, e.target.value); },
+          placeholder: "Enter custom instructions…",
+          rows: 3,
+          style: S.textarea,
+        })
+      );
+    }
+
+    if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
+    if (error) return h("div", { style: { padding: 40, color: "#f85149" }, onClick: loadConfig }, "⚠️ " + error + " (click to retry)");
+
+    return h("div", null,
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+        h("h2", { style: { margin: 0 } }, "Workspace Configuration"),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          saveMsg
+            ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text)
+            : null,
+          h("button", { onClick: handleSave, disabled: saving, style: S.btnPrimary },
+            saving ? "Saving…" : "💾 Save Changes")
+        )
+      ),
+
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "🧠 Reasoning"),
+        renderToggle("Enable Reasoning", "reasoning.enabled", "Whether Honcho will use reasoning to form representations and draw conclusions"),
+        renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions for the reasoning system")
+      ),
+
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "👤 Peer Cards"),
+        renderToggle("Use Peer Cards", "peer_card.use", "Whether to use peer cards during the reasoning process"),
+        renderToggle("Create Peer Cards", "peer_card.create", "Whether to generate peer cards based on content")
+      ),
+
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "📝 Summaries"),
+        renderToggle("Enable Summaries", "summary.enabled", "Whether to enable session summary functionality"),
+        renderNumber("Messages per Short Summary", "summary.messages_per_short_summary", "Number of messages before generating a short summary (min 10)", 10, 500),
+        renderNumber("Messages per Long Summary", "summary.messages_per_long_summary", "Number of messages before generating a long summary (min 20)", 20, 1000)
+      ),
+
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "💤 Dream"),
+        renderToggle("Enable Dream", "dream.enabled", "Whether Honcho will run background 'dream' processing")
+      )
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Main App — tab router
   // ---------------------------------------------------------------------------
 
@@ -977,6 +1157,7 @@
       { key: "search", label: "Search" },
       { key: "analytics", label: "Analytics" },
       { key: "status", label: "Status" },
+      { key: "config", label: "Config" },
     ];
 
     var content;
@@ -987,6 +1168,7 @@
     else if (tab === "search") content = h(SearchTab);
     else if (tab === "analytics") content = h(AnalyticsTab);
     else if (tab === "status") content = h(StatusTab);
+    else if (tab === "config") content = h(ConfigTab);
 
     return h("div", { style: S.page },
       h("div", { style: S.header },

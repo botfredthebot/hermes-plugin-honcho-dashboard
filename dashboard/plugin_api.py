@@ -44,6 +44,35 @@ def honcho_post(path: str, body: Any = None) -> dict:
         raise HTTPException(status_code=502, detail=str(e))
 
 
+def honcho_put(path: str, body: Any = None) -> dict:
+    """PUT to Honcho API."""
+    data = json.dumps(body or {}).encode()
+    req = urllib.request.Request(
+        f"{HONCHO_BASE}{path}",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=e.code, detail=e.read().decode()[:500])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+def _deep_merge(base: dict, update: dict) -> dict:
+    """Deep merge update into base. Returns new dict."""
+    result = dict(base)
+    for key, value in update.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def honcho_delete(path: str) -> dict:
     """DELETE to Honcho API. Tries direct call first, falls back to docker exec."""
     # Try direct call first (works for endpoints that don't require auth)
@@ -736,3 +765,60 @@ async def source_chat(
     """Get surrounding messages from Hermes session DB for 'Jump to Chat'."""
     messages = read_hermes_messages(session_id, message_id, window)
     return {"session_id": session_id, "message_id": message_id, "messages": messages}
+
+
+# ---------------------------------------------------------------------------
+# Workspace Config — read and update Honcho workspace configuration
+# ---------------------------------------------------------------------------
+
+@router.get("/config")
+async def get_config():
+    """Get current workspace configuration."""
+    # POST to /v3/workspaces with existing ID returns the workspace (get-or-create)
+    ws = honcho_post(f"/v3/workspaces", {"id": WORKSPACE})
+    return {
+        "id": ws.get("id", WORKSPACE),
+        "metadata": ws.get("metadata", {}),
+        "configuration": ws.get("configuration", {}),
+        "created_at": ws.get("created_at", ""),
+    }
+
+
+@router.put("/config")
+async def update_config(body: dict):
+    """
+    Update workspace configuration.
+    
+    Accepts partial configuration updates. Only provided fields are merged.
+    """
+    # Get current config first
+    current = honcho_post(f"/v3/workspaces", {"id": WORKSPACE})
+    current_config = current.get("configuration") or {}
+    current_metadata = current.get("metadata") or {}
+
+    # Build update body
+    update_body: dict = {}
+
+    # Handle metadata update
+    if "metadata" in body:
+        # Merge metadata
+        merged_metadata = dict(current_metadata)
+        merged_metadata.update(body["metadata"])
+        update_body["metadata"] = merged_metadata
+
+    # Handle configuration update — deep merge
+    if "configuration" in body:
+        merged_config = _deep_merge(current_config, body["configuration"])
+        update_body["configuration"] = merged_config
+
+    if not update_body:
+        raise HTTPException(status_code=400, detail="No configuration fields provided")
+
+    # Call Honcho PUT endpoint
+    result = honcho_put(f"/v3/workspaces/{WORKSPACE}", update_body)
+    return {
+        "success": True,
+        "id": result.get("id", WORKSPACE),
+        "configuration": result.get("configuration", {}),
+        "metadata": result.get("metadata", {}),
+    }
