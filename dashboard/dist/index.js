@@ -974,7 +974,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Config Tab — view and edit Honcho workspace configuration
+  // Config Tab — global settings + workspace overrides
   // ---------------------------------------------------------------------------
 
   function ConfigTab() {
@@ -999,244 +999,332 @@
       setGlobalLoading(true);
       fetchJSON(API + "/global-config")
         .then(function (d) { setGlobalConfig(d); })
-        .catch(function () { /* global config is best-effort */ })
+        .catch(function () { /* best-effort */ })
         .finally(function () { setGlobalLoading(false); });
     }
 
     useEffect(function () { loadConfig(); loadGlobalConfig(); }, []);
 
+    function getNested(obj, path) {
+      if (!obj) return undefined;
+      var parts = path.split(".");
+      var cur = obj;
+      for (var i = 0; i < parts.length; i++) {
+        if (cur == null || typeof cur !== "object") return undefined;
+        cur = cur[parts[i]];
+      }
+      return cur;
+    }
+
+    function setNested(obj, path, value) {
+      var parts = path.split(".");
+      var cur = obj;
+      for (var i = 0; i < parts.length - 1; i++) {
+        if (!cur[parts[i]] || typeof cur[parts[i]] !== "object") cur[parts[i]] = {};
+        cur = cur[parts[i]];
+      }
+      cur[parts[parts.length - 1]] = value;
+    }
+
+    function getEffective(wsPath, globalPath) {
+      var wsVal = getNested(config && config.configuration, wsPath);
+      if (wsVal !== undefined && wsVal !== null) return wsVal;
+      return getNested(globalConfig, globalPath);
+    }
+
+    function isOverridden(wsPath) {
+      var wsVal = getNested(config && config.configuration, wsPath);
+      return wsVal !== undefined && wsVal !== null;
+    }
+
     function updateField(path, value) {
-        var parts = path.split(".");
-        var newConfig = JSON.parse(JSON.stringify(config || {}));
-        var obj = newConfig.configuration = newConfig.configuration || {};
-        for (var i = 0; i < parts.length - 1; i++) {
-          if (!obj[parts[i]] || typeof obj[parts[i]] !== "object") {
-            obj[parts[i]] = {};
-          }
-          obj = obj[parts[i]];
-        }
-        obj[parts[parts.length - 1]] = value;
-        setConfig(newConfig);
-      }
+      var newConfig = JSON.parse(JSON.stringify(config || {}));
+      setNested(newConfig.configuration || (newConfig.configuration = {}), path, value);
+      setConfig(newConfig);
+    }
 
-      function handleSave() {
-        if (!config) return;
-        setSaving(true);
-        setSaveMsg(null);
-        fetch(API + "/config", {
-          method: "PUT",
-          headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
-          body: JSON.stringify({ configuration: config.configuration || {} }),
+    function handleSave() {
+      if (!config) return;
+      setSaving(true);
+      setSaveMsg(null);
+      fetch(API + "/config", {
+        method: "PUT",
+        headers: Object.assign({}, authHeaders(), {"Content-Type": "application/json"}),
+        body: JSON.stringify({ configuration: config.configuration || {} }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) { setSaveMsg({ type: "ok", text: "Saved." }); loadConfig(); }
+          else { setSaveMsg({ type: "err", text: (d.detail || "Save failed") }); }
         })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (d.success) {
-              setSaveMsg({ type: "ok", text: "Configuration saved successfully." });
-              loadConfig();
-            } else {
-              setSaveMsg({ type: "err", text: (d.detail || "Save failed") });
-            }
-          })
-          .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
-          .finally(function () { setSaving(false); });
-      }
+        .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
+        .finally(function () { setSaving(false); });
+    }
 
-      // ── Toggle switch ──────────────────────────────────────────────────
-      function renderToggle(label, path, description) {
-        var parts = path.split(".");
-        var cfg = (config && config.configuration) || {};
-        for (var i = 0; i < parts.length; i++) {
-          if (!cfg || typeof cfg !== "object") { cfg = null; break; }
-          cfg = cfg[parts[i]];
-        }
-        var isOn = cfg === true;
-        return h("div", { style: { marginBottom: 16 } },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-            h("div", null,
-              h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
-              description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
-            ),
-            h("button", {
-              onClick: function () { updateField(path, !isOn); },
-              title: isOn ? "Currently ON — click to disable" : "Currently OFF — click to enable",
-              style: {
-                width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
-                background: isOn ? "#238636" : "#30363d",
-                position: "relative", padding: 0, transition: "background 0.2s",
-              },
-            },
-              h("div", {
-                style: {
-                  width: 20, height: 20, borderRadius: 10, background: "#fff",
-                  position: "absolute", top: 3, left: isOn ? 25 : 3,
-                  transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-                },
-              })
-            )
-          )
-        );
-      }
-
-      // ── Number input ───────────────────────────────────────────────────
-      function renderNumber(label, path, description, min, max) {
-        var parts = path.split(".");
-        var cfg = (config && config.configuration) || {};
-        for (var i = 0; i < parts.length; i++) {
-          if (!cfg || typeof cfg !== "object") { cfg = null; break; }
-          cfg = cfg[parts[i]];
-        }
-        var val = (cfg != null) ? cfg : "";
-        return h("div", { style: { marginBottom: 16 } },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-            h("div", null,
-              h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label),
-              description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
-            ),
-            h("input", {
-              type: "number",
-              min: min, max: max, value: val,
-              onChange: function (e) {
-                var v = parseInt(e.target.value, 10);
-                if (!isNaN(v)) updateField(path, v);
-              },
-              style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
-            })
-          )
-        );
-      }
-
-      // ── Textarea ───────────────────────────────────────────────────────
-      function renderTextarea(label, path, description) {
-        var parts = path.split(".");
-        var cfg = (config && config.configuration) || {};
-        for (var i = 0; i < parts.length; i++) {
-          if (!cfg || typeof cfg !== "object") { cfg = null; break; }
-          cfg = cfg[parts[i]];
-        }
-        var val = (cfg != null) ? cfg : "";
-        return h("div", { style: { marginBottom: 16 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
-          description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
-          h("textarea", {
-            value: val,
-            onChange: function (e) { updateField(path, e.target.value); },
-            placeholder: "Enter custom instructions…",
-            rows: 3, style: S.textarea,
-          })
-        );
-      }
-
-      // ── Model info display ─────────────────────────────────────────────
-      function renderModelSection(title, icon, modelCfg) {
-        if (!modelCfg) return null;
-        var model = modelCfg.model || "unknown";
-        var transport = modelCfg.transport || "";
-        var maxTokens = modelCfg.max_output_tokens || modelCfg.max_tokens || "—";
-        var thinking = modelCfg.thinking_budget_tokens;
-        return h("div", { style: { marginBottom: 12, padding: "10px 12px", background: "#0d1117", border: "1px solid #21262d", borderRadius: 6 } },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
-            h("span", { style: { fontWeight: 600, fontSize: "0.85em" } }, icon, " ", title),
-            h("span", { style: { fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "#161b22", borderRadius: 4, border: "1px solid #30363d" } }, transport)
+    function renderToggle(label, wsPath, globalPath, description) {
+      var effective = getEffective(wsPath, globalPath);
+      var isOn = effective === true;
+      var overridden = isOverridden(wsPath);
+      var globalVal = getNested(globalConfig, globalPath);
+      var isGreyed = !overridden && globalVal != null;
+      var badge = isGreyed
+        ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global")
+        : overridden
+        ? h("span", { style: { fontSize: "0.7em", color: "#d29922", marginLeft: 6, fontWeight: 400 } }, "— overridden")
+        : null;
+      return h("div", { style: { marginBottom: 16, opacity: isGreyed ? 0.55 : 1 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("div", null,
+            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label, badge),
+            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
           ),
-          h("div", { style: { fontFamily: "monospace", fontSize: "0.82em", color: "#58a6ff", marginBottom: 2 } }, model),
-          h("div", { style: { fontSize: "0.72em", color: "#8b949e" } },
-            "Max tokens: ", h("strong", null, String(maxTokens)),
-            thinking != null ? h("span", null, " · Thinking budget: ", h("strong", null, String(thinking))) : null
-          )
-        );
-      }
-
-      function extractModels(gc) {
-        if (!gc) return {};
-        return {
-          deriver: gc.deriver ? gc.deriver.model_config : null,
-          dialectic: {
-            minimal: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.minimal : null,
-            low: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.low : null,
-            medium: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.medium : null,
-            high: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.high : null,
-            max: gc.dialectic && gc.dialectic.levels ? gc.dialectic.levels.max : null,
+          h("button", {
+            onClick: function () { updateField(wsPath, !isOn); },
+            title: isGreyed ? "Global default: " + (isOn ? "ON" : "OFF") + ". Click to override." : (isOn ? "ON" : "OFF") + " — click to toggle",
+            style: {
+              width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+              background: isOn ? "#238636" : "#30363d",
+              position: "relative", padding: 0, transition: "background 0.2s",
+            },
           },
-          summary: gc.summary ? gc.summary.model_config : null,
-          dream: {
-            main: gc.dream ? gc.dream.main_model_config : null,
-            deduction: gc.dream ? gc.dream.deduction_model_config : null,
-            induction: gc.dream ? gc.dream.induction_model_config : null,
-          },
-          embedding: gc.embedding ? gc.embedding.model_config : null,
-        };
-      }
-
-      if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
-      if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
-        h("div", null, "⚠️ Failed to load configuration"),
-        h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
-        h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry. If this persists, the gateway may need a restart.")
-      );
-
-      var models = extractModels(globalConfig);
-
-      return h("div", null,
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-          h("h2", { style: { margin: 0 } }, "Workspace Configuration"),
-          h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
-            saveMsg
-              ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text)
-              : null,
-            h("button", { onClick: handleSave, disabled: saving, style: S.btnPrimary },
-              saving ? "Saving…" : "💾 Save Changes")
+            h("div", { style: { width: 20, height: 20, borderRadius: 10, background: "#fff", position: "absolute", top: 3, left: isOn ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" } })
           )
-        ),
-
-        h("div", { style: S.section },
-          h("div", { style: S.sectionTitle }, "🧠 Reasoning"),
-          renderToggle("Enable Reasoning", "reasoning.enabled", "Whether Honcho will use reasoning to form representations and draw conclusions"),
-          renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions for the reasoning system")
-        ),
-
-        h("div", { style: S.section },
-          h("div", { style: S.sectionTitle }, "👤 Peer Cards"),
-          renderToggle("Use Peer Cards", "peer_card.use", "Whether to use peer cards during the reasoning process"),
-          renderToggle("Create Peer Cards", "peer_card.create", "Whether to generate peer cards based on content")
-        ),
-
-        h("div", { style: S.section },
-          h("div", { style: S.sectionTitle }, "📝 Summaries"),
-          renderToggle("Enable Summaries", "summary.enabled", "Whether to enable session summary functionality"),
-          renderNumber("Messages per Short Summary", "summary.messages_per_short_summary", "Number of messages before generating a short summary (min 10)", 10, 500),
-          renderNumber("Messages per Long Summary", "summary.messages_per_long_summary", "Number of messages before generating a long summary (min 20)", 20, 1000)
-        ),
-
-        h("div", { style: S.section },
-          h("div", { style: S.sectionTitle }, "💤 Dream"),
-          renderToggle("Enable Dream", "dream.enabled", "Whether Honcho will run background 'dream' processing")
-        ),
-
-        // ── Models section ──────────────────────────────────────────────
-        h("div", { style: S.section },
-          h("div", { style: S.sectionTitle }, "🤖 Models"),
-          globalLoading
-            ? h("div", { style: { color: "#8b949e", fontSize: "0.82em", padding: "8px 0" } }, "Loading model info…")
-            : !globalConfig
-            ? h("div", { style: { color: "#8b949e", fontSize: "0.82em", padding: "8px 0" } }, "Model info unavailable (gateway may need a restart)")
-            : h("div", null,
-                models.deriver ? renderModelSection("Deriver", "⚡", models.deriver) : null,
-                models.summary ? renderModelSection("Summary", "📝", models.summary) : null,
-                models.embedding ? renderModelSection("Embedding", "🔢", models.embedding) : null,
-                models.dream && models.dream.main ? renderModelSection("Dream (Main)", "💤", models.dream.main) : null,
-                models.dream && models.dream.deduction ? renderModelSection("Dream (Deduction)", "🔍", models.dream.deduction) : null,
-                models.dream && models.dream.induction ? renderModelSection("Dream (Induction)", "💡", models.dream.induction) : null,
-                // Dialectic levels
-                h("div", { style: { marginTop: 8, marginBottom: 4, fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9" } }, "🗣 Dialectic Levels"),
-                models.dialectic && models.dialectic.minimal ? renderModelSection("Minimal", "○", models.dialectic.minimal.model_config) : null,
-                models.dialectic && models.dialectic.low ? renderModelSection("Low", "◔", models.dialectic.low.model_config) : null,
-                models.dialectic && models.dialectic.medium ? renderModelSection("Medium", "◑", models.dialectic.medium.model_config) : null,
-                models.dialectic && models.dialectic.high ? renderModelSection("High", "◕", models.dialectic.high.model_config) : null,
-                models.dialectic && models.dialectic.max ? renderModelSection("Max", "●", models.dialectic.max.model_config) : null,
-              )
         )
       );
     }
+
+    function renderNumber(label, wsPath, globalPath, description, min, max) {
+      var wsVal = getNested(config && config.configuration, wsPath);
+      var globalVal = getNested(globalConfig, globalPath);
+      var overridden = isOverridden(wsPath);
+      var isGreyed = !overridden && globalVal != null;
+      var val = (wsVal != null) ? wsVal : (globalVal != null ? globalVal : "");
+      return h("div", { style: { marginBottom: 16, opacity: isGreyed ? 0.55 : 1 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("div", null,
+            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label,
+              isGreyed ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global") : null
+            ),
+            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+          ),
+          h("input", { type: "number", min: min, max: max, value: val,
+            onChange: function (e) { var v = parseInt(e.target.value, 10); if (!isNaN(v)) updateField(wsPath, v); },
+            style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
+          })
+        )
+      );
+    }
+
+    function renderTextarea(label, path, description) {
+      var val = getNested(config && config.configuration, path) || "";
+      return h("div", { style: { marginBottom: 16 } },
+        h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
+        description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
+        h("textarea", { value: val, onChange: function (e) { updateField(path, e.target.value); }, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea })
+      );
+    }
+
+    function renderGlobalRow(label, value) {
+      var display = value == null ? "—" : String(value);
+      if (typeof value === "boolean") display = value ? "✓ true" : "✗ false";
+      return h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #21262d" } },
+        h("span", { style: { fontSize: "0.8em", color: "#8b949e" } }, label),
+        h("span", { style: { fontSize: "0.8em", fontFamily: "monospace", color: "#c9d1d9" } }, display)
+      );
+    }
+
+    function renderModelCard(title, icon, modelCfg) {
+      if (!modelCfg) return null;
+      return h("div", { style: { marginBottom: 10, padding: "10px 12px", background: "#0d1117", border: "1px solid #21262d", borderRadius: 6 } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
+          h("span", { style: { fontWeight: 600, fontSize: "0.85em" } }, icon, " ", title),
+          h("span", { style: { fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "#161b22", borderRadius: 4, border: "1px solid #30363d" } }, modelCfg.transport || "")
+        ),
+        h("div", { style: { fontFamily: "monospace", fontSize: "0.82em", color: "#58a6ff", marginBottom: 2 } }, modelCfg.model || "unknown"),
+        h("div", { style: { fontSize: "0.72em", color: "#8b949e" } },
+          modelCfg.max_output_tokens != null ? "Max output: " + modelCfg.max_output_tokens + " · " : "",
+          "Thinking: ", h("strong", null, modelCfg.thinking_budget_tokens != null ? String(modelCfg.thinking_budget_tokens) : "—")
+        )
+      );
+    }
+
+    function extractModels(gc) {
+      if (!gc) return {};
+      var dia = gc.dialectic || {};
+      var lvls = dia.levels || {};
+      return {
+        deriver: (gc.deriver || {}).model_config || null,
+        dialectic: { minimal: (lvls.minimal || {}).model_config || null, low: (lvls.low || {}).model_config || null, medium: (lvls.medium || {}).model_config || null, high: (lvls.high || {}).model_config || null, max: (lvls.max || {}).model_config || null },
+        summary: (gc.summary || {}).model_config || null,
+        dream: { main: ((gc.dream || {}).main_model_config) || null, deduction: ((gc.dream || {}).deduction_model_config) || null, induction: ((gc.dream || {}).induction_model_config) || null },
+        embedding: (gc.embedding || {}).model_config || null,
+      };
+    }
+
+    if (loading && !config) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading configuration…");
+    if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
+      h("div", null, "⚠️ Failed to load configuration"),
+      h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
+      h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry.")
+    );
+
+    var models = extractModels(globalConfig);
+    var gc = globalConfig || {};
+    var deriver = gc.deriver || {};
+    var dialectic = gc.dialectic || {};
+    var summary = gc.summary || {};
+    var dream = gc.dream || {};
+    var embedding = gc.embedding || {};
+    var cache = gc.cache || {};
+    var llm = gc.llm || {};
+    var app = gc.app || {};
+    var peerCard = gc.peer_card || {};
+    var vectorStore = gc.vector_store || {};
+    var auth = gc.auth || {};
+
+    return h("div", null,
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+        h("h2", { style: { margin: 0 } }, "Configuration"),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          saveMsg ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text) : null,
+          h("button", { onClick: handleSave, disabled: saving, style: S.btnPrimary }, saving ? "Saving…" : "💾 Save Changes")
+        )
+      ),
+
+      // ── GLOBAL SETTINGS ─────────────────────────────────────────────
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "🌐 Global Settings"),
+        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Server-level defaults from config.toml. Read-only."),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "⚡ Deriver"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Enabled", deriver.ENABLED), renderGlobalRow("Workers", deriver.WORKERS),
+            renderGlobalRow("Polling interval", deriver.POLLING_SLEEP_INTERVAL_SECONDS + "s"),
+            renderGlobalRow("Stale timeout", deriver.STALE_SESSION_TIMEOUT_MINUTES + " min"),
+            renderGlobalRow("Deduplicate", deriver.DEDUPLICATE),
+            renderGlobalRow("Max input tokens", deriver.MAX_INPUT_TOKENS),
+            renderGlobalRow("Flush enabled", deriver.FLUSH_ENABLED)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🗣 Dialectic"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Max output tokens", dialectic.MAX_OUTPUT_TOKENS),
+            renderGlobalRow("Max input tokens", dialectic.MAX_INPUT_TOKENS),
+            renderGlobalRow("History token limit", dialectic.HISTORY_TOKEN_LIMIT)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "📝 Summary"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Enabled", summary.ENABLED),
+            renderGlobalRow("Messages per short", summary.MESSAGES_PER_SHORT_SUMMARY),
+            renderGlobalRow("Messages per long", summary.MESSAGES_PER_LONG_SUMMARY)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "💤 Dream"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Enabled", dream.ENABLED),
+            renderGlobalRow("Document threshold", dream.DOCUMENT_THRESHOLD),
+            renderGlobalRow("Idle timeout", dream.IDLE_TIMEOUT_MINUTES + " min"),
+            renderGlobalRow("Min hours between", dream.MIN_HOURS_BETWEEN_DREAMS + "h"),
+            renderGlobalRow("Max tool iterations", dream.MAX_TOOL_ITERATIONS)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "👤 Peer Cards"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Enabled", peerCard.ENABLED)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🔢 Embedding"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Vector dimensions", embedding.VECTOR_DIMENSIONS),
+            renderGlobalRow("Max input tokens", embedding.MAX_INPUT_TOKENS),
+            renderGlobalRow("Provider", llm.EMBEDDING_PROVIDER)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "💾 Cache"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Enabled", cache.ENABLED),
+            renderGlobalRow("Default TTL", cache.DEFAULT_TTL_SECONDS + "s")
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "⚙️ App"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Log level", app.LOG_LEVEL),
+            renderGlobalRow("Session observers limit", app.SESSION_OBSERVERS_LIMIT),
+            renderGlobalRow("Max file size", app.MAX_FILE_SIZE),
+            renderGlobalRow("Max message size", app.MAX_MESSAGE_SIZE),
+            renderGlobalRow("Embed messages", app.EMBED_MESSAGES)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🔐 Auth"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Use auth", auth.USE_AUTH)
+          )
+        ),
+
+        h("div", { style: { marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 4, color: "#c9d1d9" } }, "🗄 Vector Store"),
+          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "6px 12px" } },
+            renderGlobalRow("Type", vectorStore.TYPE),
+            renderGlobalRow("Dimensions", vectorStore.DIMENSIONS)
+          )
+        ),
+
+        // ── Models subsection ──
+        h("div", { style: { marginTop: 16, marginBottom: 8, fontWeight: 600, fontSize: "0.9em", color: "#c9d1d9" } }, "🤖 Models"),
+        models.deriver ? renderModelCard("Deriver", "⚡", models.deriver) : null,
+        models.summary ? renderModelCard("Summary", "📝", models.summary) : null,
+        models.embedding ? renderModelCard("Embedding", "🔢", models.embedding) : null,
+        models.dream && models.dream.main ? renderModelCard("Dream (Main)", "💤", models.dream.main) : null,
+        models.dream && models.dream.deduction ? renderModelCard("Dream (Deduction)", "🔍", models.dream.deduction) : null,
+        models.dream && models.dream.induction ? renderModelCard("Dream (Induction)", "💡", models.dream.induction) : null,
+        h("div", { style: { marginTop: 8, marginBottom: 4, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Dialectic Levels"),
+        models.dialectic && models.dialectic.minimal ? renderModelCard("Minimal", "○", models.dialectic.minimal) : null,
+        models.dialectic && models.dialectic.low ? renderModelCard("Low", "◔", models.dialectic.low) : null,
+        models.dialectic && models.dialectic.medium ? renderModelCard("Medium", "◑", models.dialectic.medium) : null,
+        models.dialectic && models.dialectic.high ? renderModelCard("High", "◕", models.dialectic.high) : null,
+        models.dialectic && models.dialectic.max ? renderModelCard("Max", "●", models.dialectic.max) : null
+      ),
+
+      // ── WORKSPACE OVERRIDES ──────────────────────────────────────────
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "🔧 Workspace Overrides"),
+        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Override global defaults for this workspace. Greyed-out = using global default."),
+
+        renderToggle("Enable Reasoning", "reasoning.enabled", "deriver.ENABLED", "Override global deriver setting"),
+        renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions for reasoning"),
+
+        h("div", { style: { marginTop: 12, marginBottom: 8, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Peer Cards"),
+        renderToggle("Use Peer Cards", "peer_card.use", "peer_card.ENABLED", "Override global peer card setting"),
+        renderToggle("Create Peer Cards", "peer_card.create", "peer_card.ENABLED", "Override global peer card creation"),
+
+        h("div", { style: { marginTop: 12, marginBottom: 8, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Summaries"),
+        renderToggle("Enable Summaries", "summary.enabled", "summary.ENABLED", "Override global summary setting"),
+        renderNumber("Messages per Short", "summary.messages_per_short_summary", "summary.MESSAGES_PER_SHORT_SUMMARY", "Min 10", 10, 500),
+        renderNumber("Messages per Long", "summary.messages_per_long_summary", "summary.MESSAGES_PER_LONG_SUMMARY", "Min 20", 20, 1000),
+
+        h("div", { style: { marginTop: 12, marginBottom: 8, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Dream"),
+        renderToggle("Enable Dream", "dream.enabled", "dream.ENABLED", "Override global dream setting")
+      )
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Main App — tab router
