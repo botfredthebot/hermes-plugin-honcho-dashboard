@@ -2,8 +2,8 @@
  * Honcho Dashboard — Hermes Dashboard Plugin
  *
  * Tabs: Overview, Peers, Sessions, Conclusions, Search, Analytics, Status.
- * Features: sidebar nav, back-button nav stack, peer drill-down,
- *   vector search, analytics charts, queue status, add insight.
+ * Features: sidebar nav, full-width list layouts, delete buttons on right,
+ *   peer filter dropdown on conclusions, DB status on Status tab.
  */
 (function () {
   "use strict";
@@ -40,6 +40,16 @@
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
+  }
+
+  function authHeaders() {
+    var token = window.__HERMES_SESSION_TOKEN__ || "";
+    var headers = { "Content-Type": "application/json" };
+    if (token) {
+      headers["X-Hermes-Session-Token"] = token;
+      headers["Authorization"] = "Bearer " + token;
+    }
+    return headers;
   }
 
   function timeAgo(iso) {
@@ -93,16 +103,17 @@
       };
     },
 
-    // Cards
-    card: {
+    // Full-width row card
+    rowCard: {
       background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
-      padding: "14px 16px", marginBottom: 10, cursor: "pointer",
+      padding: "12px 16px", marginBottom: 8,
     },
-    cardStatic: {
-      background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
-      padding: "14px 16px", marginBottom: 10,
-    },
-    cardSelected: { border: "1px solid #58a6ff" },
+    rowCardHighlight: { border: "1px solid #d2992244", background: "#1a1408" },
+
+    // Row layout: left content + right actions
+    rowInner: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+    rowLeft: { flex: 1, minWidth: 0 },
+    rowRight: { display: "flex", gap: 6, alignItems: "center", flexShrink: 0, marginLeft: 12 },
 
     // Stat cards
     statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 },
@@ -132,6 +143,10 @@
       width: "100%", padding: "8px 12px", background: "#0d1117",
       border: "1px solid #30363d", borderRadius: 6, color: "#c9d1d9",
       fontSize: "0.85em", minHeight: "80px", resize: "vertical", boxSizing: "border-box",
+    },
+    select: {
+      padding: "6px 12px", background: "#0d1117", border: "1px solid #30363d",
+      borderRadius: 6, color: "#c9d1d9", fontSize: "0.85em", minWidth: "200px",
     },
 
     // Buttons
@@ -186,11 +201,54 @@
     },
     insightLabel: { color: "#8b949e", fontSize: "0.8rem", marginBottom: "0.5rem" },
 
-    // Two-pane
-    twoPane: { display: "flex", gap: 24 },
-    leftPane: { flex: "0 0 340px", overflowY: "auto", maxHeight: "calc(100vh - 200px)" },
-    rightPane: { flex: 1, overflowY: "auto", maxHeight: "calc(100vh - 200px)" },
+    // DB badge
+    dbBadge: {
+      display: "flex", alignItems: "center", gap: 6,
+      padding: "6px 10px", marginBottom: 10, borderRadius: 6,
+      fontSize: "0.72em",
+    },
   };
+
+  // ---------------------------------------------------------------------------
+  // DB Status Badge component
+  // ---------------------------------------------------------------------------
+
+  function DbStatusBadge() {
+    var _u = useState(null), status = _u[0], setStatus = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+
+    function check() {
+      setLoading(true);
+      fetchJSON(API + "/db-status")
+        .then(function (d) { setStatus(d); })
+        .catch(function () { setStatus({connected: false, error: "API unreachable"}); })
+        .finally(function () { setLoading(false); });
+    }
+
+    useEffect(function () { check(); }, []);
+
+    if (loading && !status) {
+      return h("div", { style: Object.assign({}, S.dbBadge, { background: "#1c1c1c", border: "1px solid #30363d", color: "#8b949e" }) },
+        "⏳ Checking DB…"
+      );
+    }
+
+    var connected = status && status.connected;
+    return h("div", {
+      style: Object.assign({}, S.dbBadge, {
+        background: connected ? "#0d2b1b" : "#2b0d0d",
+        border: "1px solid " + (connected ? "#2ea043" : "#f85149"),
+        color: connected ? "#3fb950" : "#f85149",
+      }),
+    },
+      h("span", null, connected ? "🟢" : "🔴"),
+      status
+        ? (connected
+            ? "DB connected — " + status.host + ":" + status.port
+            : "DB error — " + (status.error || "unknown"))
+        : "Unknown"
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Tab Button
@@ -221,7 +279,7 @@
     }, []);
 
     if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading…");
-    if (error) return h("div", { style: { padding: 40, color: "#f85149" }, }, "⚠️ " + error);
+    if (error) return h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ " + error);
     if (!data) return null;
 
     return h("div", null,
@@ -235,7 +293,7 @@
         h("div", { style: S.sectionTitle }, "📜 Recent Conclusions"),
         data.conclusions.recent && data.conclusions.recent.length > 0
           ? data.conclusions.recent.map(function (c, i) {
-              return h("div", { key: c.id || String(i), style: S.cardStatic },
+              return h("div", { key: c.id || String(i), style: S.rowCard },
                 h("div", { style: S.text }, c.content || ""),
                 h("div", { style: S.small },
                   (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
@@ -248,14 +306,12 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Peers Tab
+  // Peers Tab — full-width rows, delete/view on right
   // ---------------------------------------------------------------------------
 
   function PeersTab() {
     var _u = useState([]), peers = _u[0], setPeers = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
-    var _u3 = useState(null), selectedPeer = _u3[0], setSelectedPeer = _u3[1];
-    var _u4 = useState(null), dbStatus = _u4[0], setDbStatus = _u4[1];
 
     function loadPeers() {
       setLoading(true);
@@ -265,27 +321,15 @@
         .finally(function () { setLoading(false); });
     }
 
-    function checkDbStatus() {
-      fetchJSON(API + "/db-status")
-        .then(function (d) { setDbStatus(d); })
-        .catch(function () { setDbStatus({connected: false, error: "API unreachable"}); });
-    }
-
-    useEffect(function () { loadPeers(); checkDbStatus(); }, []);
+    useEffect(function () { loadPeers(); }, []);
 
     function deletePeer(peerId, peerName) {
       if (!window.confirm("Delete peer '" + peerName + "' and all associated data?\n\nThis will remove:\n- The peer\n- All messages sent by this peer\n- All documents, collections, and session links\n\nThis cannot be undone.")) {
         return;
       }
-      var token = window.__HERMES_SESSION_TOKEN__ || "";
-      var headers = { "Content-Type": "application/json" };
-      if (token) {
-        headers["X-Hermes-Session-Token"] = token;
-        headers["Authorization"] = "Bearer " + token;
-      }
       fetch(API + "/peer/" + encodeURIComponent(peerId) + "?confirm=true", {
         method: "DELETE",
-        headers: headers,
+        headers: authHeaders(),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -294,7 +338,6 @@
               (d.deleted.messages || 0) + " messages, " +
               (d.deleted.documents || 0) + " documents, " +
               (d.deleted.collections || 0) + " collections.");
-            if (selectedPeer === peerId) setSelectedPeer(null);
             loadPeers();
           } else {
             alert("Error: " + (d.detail || "Unknown error"));
@@ -303,39 +346,32 @@
         .catch(function (e) { alert("Delete failed: " + e.message); });
     }
 
-    return h("div", { style: S.twoPane },
-      h("div", { style: S.leftPane },
-        // DB Status indicator
-        h("div", {
-            style: {
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "6px 10px", marginBottom: 10, borderRadius: 6,
-              background: dbStatus && dbStatus.connected ? "#0d2b1b" : "#2b0d0d",
-              border: "1px solid " + (dbStatus && dbStatus.connected ? "#2ea043" : "#f85149"),
-              fontSize: "0.72em", color: dbStatus && dbStatus.connected ? "#3fb950" : "#f85149",
-            },
-          },
-          h("span", null, dbStatus && dbStatus.connected ? "🟢" : "🔴"),
-          dbStatus
-            ? h("span", null,
-                dbStatus.connected
-                  ? "DB connected — " + dbStatus.host + ":" + dbStatus.port
-                  : "DB error — " + (dbStatus.error || "unknown")
-              )
-            : h("span", null, "Checking DB…")
-        ),
-        h("div", { style: { fontWeight: 600, fontSize: "0.92em", color: "#8b949e", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" } }, "Peers (" + peers.length + ")"),
-        loading
-          ? h("div", { style: { color: "#8b949e" } }, "Loading…")
-          : peers.map(function (p) {
-              var isSelected = selectedPeer === p.id;
-              var displayName = p.metadata && p.metadata.name ? p.metadata.name : p.id;
-              return h("div", {
-                  key: p.id,
-                  style: Object.assign({}, S.card, isSelected ? S.cardSelected : {}),
-                },
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
-                  h("div", { style: { fontWeight: 600, fontSize: "0.95em" } }, displayName),
+    return h("div", null,
+      h("div", { style: { fontWeight: 600, fontSize: "0.92em", color: "#8b949e", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em" } },
+        "Peers (" + peers.length + ")"
+      ),
+      loading
+        ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
+        : peers.length === 0
+        ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No peers found.")
+        : peers.map(function (p) {
+            var displayName = p.metadata && p.metadata.name ? p.metadata.name : p.id;
+            return h("div", { key: p.id, style: S.rowCard },
+              h("div", { style: S.rowInner },
+                h("div", { style: S.rowLeft },
+                  h("div", { style: { fontWeight: 600, fontSize: "0.95em", marginBottom: 2 } }, displayName),
+                  h("div", { style: Object.assign({}, S.small, S.mono) }, p.id),
+                  h("div", { style: Object.assign({}, S.small, { marginTop: 4 }) },
+                    "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
+                    " · By: ", h("strong", null, String(p.conclusions_by || 0))
+                  )
+                ),
+                h("div", { style: S.rowRight },
+                  h("button", {
+                    title: "View details for '" + displayName + "'",
+                    onClick: function () { window.open("#", "_self"); },  // placeholder — could expand inline
+                    style: S.btnSmall,
+                  }, "👁 View"),
                   h("button", {
                     title: "Delete peer '" + displayName + "'",
                     onClick: function (e) {
@@ -344,183 +380,15 @@
                     },
                     style: S.btnDelete,
                   }, "🗑 Delete")
-                ),
-                h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 6 } }, p.id),
-                h("div", { style: S.small },
-                  "Conclusions about: ", h("strong", null, String(p.conclusions_about || 0)),
-                  " · By: ", h("strong", null, String(p.conclusions_by || 0))
-                ),
-                h("div", { style: { marginTop: 8 } },
-                  h("button", {
-                    onClick: function () { setSelectedPeer(isSelected ? null : p.id); },
-                    style: S.btnSmall,
-                  }, isSelected ? "✕ Close" : "👁 View Details")
                 )
-              );
-            })
-      ),
-      h("div", { style: S.rightPane },
-        selectedPeer
-          ? h(PeerDetail, { peerId: selectedPeer, onDelete: function () { setSelectedPeer(null); loadPeers(); } })
-          : h("div", { style: { color: "#8b949e", padding: 40, textAlign: "center" } }, "👈 Select a peer to view details")
-      )
-    );
-  }
-
-  function PeerDetail(props) {
-    var peerId = props.peerId;
-    var onDelete = props.onDelete;
-    var _u = useState(null), data = _u[0], setData = _u[1];
-    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
-    var _u3 = useState(false), showInsight = _u3[0], setShowInsight = _u3[1];
-    var _u4 = useState(""), insightText = _u4[0], setInsightText = _u4[1];
-    var _u5 = useState(false), showDeleteConfirm = _u5[0], setShowDeleteConfirm = _u5[1];
-    var _u6 = useState(null), deletePreview = _u6[0], setDeletePreview = _u6[1];
-
-    useEffect(function () {
-      setLoading(true);
-      fetchJSON(API + "/conclusions?observed_id=" + encodeURIComponent(peerId) + "&limit=100")
-        .then(function (d) { setData(d); })
-        .catch(function () {})
-        .finally(function () { setLoading(false); });
-    }, [peerId]);
-
-    function submitInsight() {
-      if (!insightText.trim()) return;
-      fetch(API + "/peer/" + encodeURIComponent(peerId) + "/insight", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: insightText }),
-      })
-        .then(function () { setInsightText(""); setShowInsight(false); })
-        .catch(function () {});
-    }
-
-    function previewDelete() {
-      var token = window.__HERMES_SESSION_TOKEN__ || "";
-      var headers = { "Content-Type": "application/json" };
-      if (token) {
-        headers["X-Hermes-Session-Token"] = token;
-        headers["Authorization"] = "Bearer " + token;
-      }
-      fetch(API + "/peer/" + encodeURIComponent(peerId), {
-        method: "DELETE",
-        headers: headers,
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { setDeletePreview(d); setShowDeleteConfirm(true); })
-        .catch(function (e) { alert("Error: " + e.message); });
-    }
-
-    function confirmDelete() {
-      var token = window.__HERMES_SESSION_TOKEN__ || "";
-      var headers = { "Content-Type": "application/json" };
-      if (token) {
-        headers["X-Hermes-Session-Token"] = token;
-        headers["Authorization"] = "Bearer " + token;
-      }
-      fetch(API + "/peer/" + encodeURIComponent(peerId) + "?confirm=true", {
-        method: "DELETE",
-        headers: headers,
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.success) {
-            alert("Peer '" + peerId + "' deleted.\n\nRemoved: " +
-              (d.deleted.messages || 0) + " messages, " +
-              (d.deleted.documents || 0) + " documents, " +
-              (d.deleted.collections || 0) + " collections.");
-            if (onDelete) onDelete();
-          } else {
-            alert("Error: " + (d.detail || "Unknown error"));
-          }
-        })
-        .catch(function (e) { alert("Delete failed: " + e.message); });
-    }
-
-    var conclusions = (data && data.items) || [];
-
-    return h("div", null,
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-        h("h3", { style: { margin: 0 } }, "Peer: ", h("code", null, peerId)),
-        h("button", {
-          onClick: previewDelete,
-          style: S.btnDelete,
-        }, "🗑 Delete Peer")
-      ),
-
-      // Delete confirmation modal
-      showDeleteConfirm
-        ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a" }) },
-            h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Deletion"),
-            deletePreview
-              ? h("div", null,
-                  h("div", { style: { marginBottom: 8 } },
-                    "About to delete peer: ", h("strong", null, deletePreview.peer_name || peerId)
-                  ),
-                  h("div", { style: { fontSize: "0.82em", color: "#8b949e", marginBottom: 12 } },
-                    "This will remove:",
-                    h("ul", { style: { margin: "4px 0 0 16px", padding: 0 } },
-                      h("li", null, (deletePreview.will_delete.peers || 0) + " peer"),
-                      h("li", null, (deletePreview.will_delete.messages || 0) + " messages"),
-                      h("li", null, (deletePreview.will_delete.documents || 0) + " documents"),
-                      h("li", null, (deletePreview.will_delete.collections || 0) + " collections"),
-                      h("li", null, (deletePreview.will_delete.session_peers || 0) + " session links"),
-                    )
-                  ),
-                  h("div", { style: { display: "flex", gap: 8 } },
-                    h("button", { onClick: confirmDelete, style: S.btnDeleteConfirm }, "🗑 Yes, Delete"),
-                    h("button", { onClick: function () { setShowDeleteConfirm(false); setDeletePreview(null); }, style: S.btn }, "Cancel")
-                  )
-                )
-              : h("div", { style: { color: "#8b949e" } }, "Loading preview…")
-          )
-        : null,
-
-      // Add Insight
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle },
-          "🧠 Conclusions (", conclusions.length, ")",
-          h("button", {
-            onClick: function () { setShowInsight(!showInsight); },
-            style: Object.assign({}, S.btnPrimary, { marginLeft: 12 }),
-          }, showInsight ? "Cancel" : "➕ Add Insight")
-        ),
-
-        showInsight
-          ? h("div", { style: S.insightBox },
-              h("div", { style: S.insightLabel },
-                "Submit an observation about ", h("strong", null, peerId), ". Honcho will process it and may derive new conclusions if it contains meaningful, novel insights."
-              ),
-              h("textarea", {
-                style: S.textarea,
-                rows: 3,
-                placeholder: "e.g. Kit prefers concise emails with only filled-in fields — no empty TBC fields",
-                value: insightText,
-                onChange: function (e) { setInsightText(e.target.value); },
-              }),
-              h("button", { onClick: submitInsight, style: Object.assign({}, S.btnPrimary, { marginTop: 8 }) }, "⚡ Submit Insight")
-            )
-          : null,
-
-        loading
-          ? h("div", { style: { color: "#8b949e", padding: 20 } }, "Loading conclusions…")
-          : conclusions.length === 0
-          ? h("div", { style: { color: "#8b949e" } }, "No conclusions yet.")
-          : conclusions.map(function (c, i) {
-              return h("div", { key: c.id || String(i), style: S.cardStatic },
-                h("div", { style: S.text }, c.content || ""),
-                h("div", { style: S.small },
-                  (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
-                )
-              );
-            })
-      )
+              )
+            );
+          })
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Sessions Tab
+  // Sessions Tab — full-width rows, delete/view on right
   // ---------------------------------------------------------------------------
 
   function SessionsTab() {
@@ -545,15 +413,9 @@
     var emptySessions = sessions.filter(function (s) { return (s.message_count || 0) === 0; });
 
     function previewDelete(sessionId) {
-      var token = window.__HERMES_SESSION_TOKEN__ || "";
-      var headers = { "Content-Type": "application/json" };
-      if (token) {
-        headers["X-Hermes-Session-Token"] = token;
-        headers["Authorization"] = "Bearer " + token;
-      }
       fetch(API + "/session/" + encodeURIComponent(sessionId), {
         method: "DELETE",
-        headers: headers,
+        headers: authHeaders(),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) { setDeletePreview(d); setDeleteTarget(sessionId); setShowDeleteConfirm(true); })
@@ -563,15 +425,9 @@
     function confirmDelete() {
       if (!deleteTarget) return;
       setDeleting(true);
-      var token = window.__HERMES_SESSION_TOKEN__ || "";
-      var headers = { "Content-Type": "application/json" };
-      if (token) {
-        headers["X-Hermes-Session-Token"] = token;
-        headers["Authorization"] = "Bearer " + token;
-      }
       fetch(API + "/session/" + encodeURIComponent(deleteTarget) + "?confirm=true", {
         method: "DELETE",
-        headers: headers,
+        headers: authHeaders(),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -599,12 +455,7 @@
       }
       var completed = 0;
       var failed = 0;
-      var token = window.__HERMES_SESSION_TOKEN__ || "";
-      var headers = { "Content-Type": "application/json" };
-      if (token) {
-        headers["X-Hermes-Session-Token"] = token;
-        headers["Authorization"] = "Bearer " + token;
-      }
+      var headers = authHeaders();
       emptySessions.forEach(function (s) {
         fetch(API + "/session/" + encodeURIComponent(s.id) + "?confirm=true", {
           method: "DELETE",
@@ -626,7 +477,7 @@
     }
 
     return h("div", null,
-      // Header with bulk delete
+      // Header
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
         h("div", { style: { fontWeight: 600 } },
           "All Sessions (", sessions.length, ")",
@@ -637,10 +488,8 @@
             : null
         ),
         emptySessions.length > 0
-          ? h("button", {
-              onClick: deleteAllEmpty,
-              style: S.btnDelete,
-            }, "🗑 Delete All Empty (", emptySessions.length, ")")
+          ? h("button", { onClick: deleteAllEmpty, style: S.btnDelete },
+              "🗑 Delete All Empty (", emptySessions.length, ")")
           : null
       ),
 
@@ -664,11 +513,9 @@
                     )
                   ),
                   h("div", { style: { display: "flex", gap: 8 } },
-                    h("button", {
-                      onClick: confirmDelete,
-                      disabled: deleting,
-                      style: S.btnDeleteConfirm,
-                    }, deleting ? "Deleting…" : "🗑 Yes, Delete"),
+                    h("button", { onClick: confirmDelete, disabled: deleting, style: S.btnDeleteConfirm },
+                      deleting ? "Deleting…" : "🗑 Yes, Delete"
+                    ),
                     h("button", {
                       onClick: function () { setShowDeleteConfirm(false); setDeleteTarget(null); setDeletePreview(null); },
                       disabled: deleting,
@@ -691,20 +538,21 @@
             return h("div", null,
               h("div", {
                   key: s.id,
-                  style: Object.assign({}, S.card, isEmpty ? { border: "1px solid #d2992244", background: "#1a1408" } : {}),
+                  style: Object.assign({}, S.rowCard, isEmpty ? S.rowCardHighlight : {}),
                 },
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                  h("div", null,
-                    h("div", { style: S.mono }, s.id),
+                h("div", { style: S.rowInner },
+                  h("div", { style: S.rowLeft },
+                    h("div", { style: Object.assign({}, S.mono, { fontSize: "0.82em" }) }, s.id),
                     h("div", { style: { fontSize: "0.78em", marginTop: 2 } },
                       h("span", { style: { color: isEmpty ? "#d29922" : "#3fb950" } },
                         msgCount, " ", msgCount === 1 ? "message" : "messages"
                       ),
                       s.is_active ? h("span", { style: { color: "#3fb950", marginLeft: 8 } }, "· Active") : null,
                       isEmpty ? h("span", { style: { color: "#d29922", marginLeft: 8 } }, "· ⚠ Empty") : null
-                    )
+                    ),
+                    h("div", { style: S.small }, "Created: ", fmtDate(s.created_at))
                   ),
-                  h("div", { style: { display: "flex", gap: 6 } },
+                  h("div", { style: S.rowRight },
                     h("button", {
                       onClick: function () { setExpanded(expanded === s.id ? null : s.id); },
                       style: S.btnSmall,
@@ -715,9 +563,6 @@
                       title: "Delete session"
                     }, "🗑")
                   )
-                ),
-                h("div", { style: S.small },
-                  "Created: ", fmtDate(s.created_at)
                 )
               ),
               expanded === s.id ? h(SessionMessages, { sessionId: s.id }) : null
@@ -757,43 +602,124 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Conclusions Tab
+  // Conclusions Tab — full-width, delete button per row, peer filter dropdown
   // ---------------------------------------------------------------------------
 
   function ConclusionsTab() {
     var _u = useState([]), conclusions = _u[0], setData = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
-    var _u3 = useState(""), filter = _u3[0], setFilter = _u3[1];
+    var _u3 = useState(""), filterPeer = _u3[0], setFilterPeer = _u3[1];
+    var _u4 = useState([]), allPeers = _u4[0], setAllPeers = _u4[1];
+    var _u5 = useState(false), showDeleteConfirm = _u5[0], setShowDeleteConfirm = _u5[1];
+    var _u6 = useState(null), deleteTarget = _u6[0], setDeleteTarget = _u6[1];
 
-    useEffect(function () {
+    // Load conclusions (filtered)
+    function loadConclusions() {
+      setLoading(true);
       var url = API + "/conclusions?limit=100";
-      if (filter) url += "&observed_id=" + encodeURIComponent(filter);
+      if (filterPeer) url += "&observed_id=" + encodeURIComponent(filterPeer);
       fetchJSON(url)
         .then(function (d) { setData(d.items || []); })
         .catch(function () {})
         .finally(function () { setLoading(false); });
-    }, [filter]);
+    }
+
+    // Load peer list for dropdown (once)
+    function loadPeers() {
+      fetchJSON(API + "/peers")
+        .then(function (d) { setAllPeers(d.peers || []); })
+        .catch(function () {});
+    }
+
+    useEffect(function () { loadConclusions(); loadPeers(); }, []);
+    useEffect(function () { loadConclusions(); }, [filterPeer]);
+
+    function confirmDelete() {
+      if (!deleteTarget) return;
+      fetch(API + "/conclusions/" + encodeURIComponent(deleteTarget.id), {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert("Conclusion deleted.");
+            setShowDeleteConfirm(false);
+            setDeleteTarget(null);
+            loadConclusions();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete failed: " + e.message); });
+    }
+
+    // Build peer options from loaded peers
+    var peerOptions = allPeers.map(function (p) {
+      var label = p.metadata && p.metadata.name ? p.metadata.name : p.id;
+      return { value: p.id, label: label };
+    });
 
     return h("div", null,
+      // Filter row
       h("div", { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
-        h("input", {
-          style: S.input,
-          placeholder: "Filter by peer ID…",
-          value: filter,
-          onChange: function (e) { setFilter(e.target.value); },
-        }),
-        filter ? h("button", { onClick: function () { setFilter(""); }, style: S.btn }, "✕ Clear") : null
+        h("select", {
+          style: S.select,
+          value: filterPeer,
+          onChange: function (e) { setFilterPeer(e.target.value); },
+        },
+          h("option", { value: "" }, "All Peers"),
+          peerOptions.map(function (opt) {
+            return h("option", { key: opt.value, value: opt.value }, opt.label);
+          })
+        ),
+        filterPeer ? h("button", { onClick: function () { setFilterPeer(""); }, style: S.btn }, "✕ Clear") : null
       ),
+
+      // Delete confirmation modal
+      showDeleteConfirm
+        ? h("div", { style: Object.assign({}, S.insightBox, { borderColor: "#f85149", border: "1px solid #f85149", background: "#1a0a0a", marginBottom: 16 }) },
+            h("div", { style: { color: "#f85149", fontWeight: 600, marginBottom: 8 } }, "⚠️ Confirm Deletion"),
+            deleteTarget
+              ? h("div", null,
+                  h("div", { style: { marginBottom: 8, fontSize: "0.85em" } },
+                    "Delete this conclusion?",
+                    h("div", { style: { color: "#8b949e", marginTop: 4 } },
+                      truncate(deleteTarget.content || "", 200)
+                    )
+                  ),
+                  h("div", { style: { display: "flex", gap: 8 } },
+                    h("button", { onClick: confirmDelete, style: S.btnDeleteConfirm }, "🗑 Yes, Delete"),
+                    h("button", {
+                      onClick: function () { setShowDeleteConfirm(false); setDeleteTarget(null); },
+                      style: S.btn,
+                    }, "Cancel")
+                  )
+                )
+              : null
+          )
+        : null,
+
+      // Conclusions list
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
         : conclusions.length === 0
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No conclusions found.")
         : conclusions.map(function (c, i) {
-            return h("div", { key: c.id || String(i), style: S.cardStatic },
-              h("div", { style: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 8 } }, c.content || ""),
-              h("div", { style: { fontSize: "0.75em", color: "#8b949e", display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                h("span", null,
-                  (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
+            return h("div", { key: c.id || String(i), style: S.rowCard },
+              h("div", { style: S.rowInner },
+                h("div", { style: S.rowLeft },
+                  h("div", { style: { fontSize: "0.88em", lineHeight: 1.5, marginBottom: 6 } }, c.content || ""),
+                  h("div", { style: { fontSize: "0.75em", color: "#8b949e" } },
+                    (c.observer_id || "?") + " → " + (c.observed_id || "?") + " · " + timeAgo(c.created_at)
+                  )
+                ),
+                h("div", { style: S.rowRight },
+                  h("button", {
+                    onClick: function () { setDeleteTarget(c); setShowDeleteConfirm(true); },
+                    style: S.btnDelete,
+                    title: "Delete this conclusion"
+                  }, "🗑")
                 )
               )
             );
@@ -847,7 +773,7 @@
             h("div", { style: { marginBottom: 12, color: "#8b949e", fontSize: "0.82em" } }, items.length, " results for \"", query, "\""),
             items.map(function (r, i) {
               var content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
-              return h("div", { key: String(i), style: S.cardStatic },
+              return h("div", { key: String(i), style: S.rowCard },
                 h("div", { style: { marginBottom: 4 } },
                   h("span", { style: { color: "#58a6ff", fontSize: "0.78em", marginRight: 8 } },
                     r.session_id ? "[" + truncate(r.session_id, 40) + "]" : ""
@@ -902,7 +828,7 @@
         h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_conclusions)), h("div", { style: S.statLabel }, "Total Conclusions")),
         h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_peers)), h("div", { style: S.statLabel }, "Peers")),
       ),
-      h("div", { style: S.cardStatic },
+      h("div", { style: S.rowCard },
         h("h3", { style: { marginBottom: 8 } }, "📨 Messages per Day"),
         h("div", { style: S.barChart },
           days.map(function (d) {
@@ -916,7 +842,7 @@
           })
         )
       ),
-      h("div", { style: Object.assign({}, S.cardStatic, { marginTop: 16 }) },
+      h("div", { style: Object.assign({}, S.rowCard, { marginTop: 16 }) },
         h("h3", { style: { marginBottom: 8 } }, "🧠 Conclusions per Day"),
         h("div", { style: S.barChart },
           days.map(function (d) {
@@ -934,7 +860,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Status Tab
+  // Status Tab — includes DB status badge
   // ---------------------------------------------------------------------------
 
   function StatusTab() {
@@ -962,6 +888,10 @@
 
     return h("div", null,
       h("h2", { style: { marginBottom: 16 } }, "System Status"),
+
+      // DB Status badge at top of Status tab
+      h(DbStatusBadge),
+
       h("div", { style: S.statGrid },
         h("div", { style: S.statCard },
           h("div", { style: Object.assign({}, S.statNumber, data.honcho_reachable ? S.ok : S.bad) },
@@ -983,7 +913,7 @@
         )
       ),
 
-      h("div", { style: Object.assign({}, S.cardStatic, { marginTop: 16 }) },
+      h("div", { style: Object.assign({}, S.rowCard, { marginTop: 16 }) },
         h("h3", { style: { marginBottom: 8 } }, "⚡ Queue / Backlog"),
         activeWU > 0
           ? h("div", { style: Object.assign({}, S.warn, { fontSize: "0.85rem", marginBottom: 12 }) },
@@ -999,84 +929,67 @@
               var inProg = s.in_progress_work_units || 0;
               var active = pend + inProg;
               var pct = total > 0 ? Math.round((done / total) * 100) : 100;
-              var barColor = active > 0 ? "#F59E0B" : "#10B981";
-              return h("div", { key: s.session_id, style: S.queueRow },
-                h("div", { style: { fontFamily: "monospace", fontSize: "0.82em", marginBottom: 4 } }, s.session_id),
-                h("div", { style: { display: "flex", alignItems: "center" } },
-                  h("div", { style: S.queueBarBg },
-                    h("div", { style: Object.assign({}, S.queueBarFill, { width: pct + "%", background: barColor }) })
-                  ),
-                  h("span", { style: S.queuePct }, pct + "%")
+              return h("div", { key: s.session_id || Math.random(), style: S.queueRow },
+                h("div", { style: { display: "flex", justifyContent: "space-between" } },
+                  h("span", { style: S.mono }, truncate(s.session_id || "unknown", 40)),
+                  h("span", { style: S.queuePct }, done, "/", total, " (", pct, "%)")
                 ),
-                h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } },
-                  done, "/", total, " ",
-                  active > 0 ? h("span", { style: S.warn }, active + " active") : h("span", { style: S.ok }, "All done")
+                h("div", { style: S.queueBarBg },
+                  h("div", { style: Object.assign({}, S.queueBarFill, {
+                    width: pct + "%",
+                    background: pct === 100 ? "#3fb950" : active > 0 ? "#d29922" : "#58a6ff",
+                  }) })
                 )
               );
-            }),
-        h("div", { style: { color: "#64748B", fontSize: "0.75rem", marginTop: 16 } },
-          "Last checked: ", new Date().toLocaleTimeString()
-        )
+            })
       )
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Main Component
+  // Main App — tab router
   // ---------------------------------------------------------------------------
 
-  function HonchoDashboard() {
+  function App() {
     var _u = useState("overview"), tab = _u[0], setTab = _u[1];
 
     var tabs = [
-      { id: "overview", label: "Overview", icon: "📊" },
-      { id: "peers", label: "Peers", icon: "👤" },
-      { id: "sessions", label: "Sessions", icon: "💬" },
-      { id: "conclusions", label: "Conclusions", icon: "🧠" },
-      { id: "search", label: "Search", icon: "🔍" },
-      { id: "analytics", label: "Analytics", icon: "📈" },
-      { id: "status", label: "Status", icon: "📡" },
+      { key: "overview", label: "Overview" },
+      { key: "peers", label: "Peers" },
+      { key: "sessions", label: "Sessions" },
+      { key: "conclusions", label: "Conclusions" },
+      { key: "search", label: "Search" },
+      { key: "analytics", label: "Analytics" },
+      { key: "status", label: "Status" },
     ];
 
     var content;
-    try {
-      if (tab === "overview") content = h(OverviewTab);
-      else if (tab === "peers") content = h(PeersTab);
-      else if (tab === "sessions") content = h(SessionsTab);
-      else if (tab === "conclusions") content = h(ConclusionsTab);
-      else if (tab === "search") content = h(SearchTab);
-      else if (tab === "analytics") content = h(AnalyticsTab);
-      else if (tab === "status") content = h(StatusTab);
-    } catch(e) {
-      console.error("[Honcho Dashboard] Tab render error:", e);
-      content = h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ Error rendering " + tab + ": " + e.message);
-    }
+    if (tab === "overview") content = h(OverviewTab);
+    else if (tab === "peers") content = h(PeersTab);
+    else if (tab === "sessions") content = h(SessionsTab);
+    else if (tab === "conclusions") content = h(ConclusionsTab);
+    else if (tab === "search") content = h(SearchTab);
+    else if (tab === "analytics") content = h(AnalyticsTab);
+    else if (tab === "status") content = h(StatusTab);
 
     return h("div", { style: S.page },
-      // Header
       h("div", { style: S.header },
-        h("div", { style: S.headerTitle }, "🧠 Honcho Dashboard"),
+        h("div", { style: S.headerTitle }, "🧠 Honcho Dashboard")
       ),
-      // Tabs
       h("div", { style: S.tabs },
         tabs.map(function (t) {
-          return h(TabBtn, { key: t.id, label: t.label, icon: t.icon, active: tab === t.id, onClick: function () { setTab(t.id); } });
+          return h(TabBtn, { key: t.key, label: t.label, active: tab === t.key, onClick: function () { setTab(t.key); } });
         })
       ),
-      // Body
       h("div", { style: S.body }, content)
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Register
-  // ---------------------------------------------------------------------------
+  // Register the plugin
+  window.__HERMES_PLUGINS__.register("honcho-dashboard", App);
+  console.log("[Honcho Dashboard] Registered successfully");
 
-  if (window.__HERMES_PLUGINS__ && typeof window.__HERMES_PLUGINS__.register === "function") {
-    window.__HERMES_PLUGINS__.register("honcho-dashboard", HonchoDashboard);
-    console.log("[Honcho Dashboard] Registered successfully");
-  } else {
-    console.error("[Honcho Dashboard] register function not available");
+  } catch (err) {
+    console.error("[Honcho Dashboard] Fatal error during initialization:", err);
   }
-  } catch(e) { console.error("[Honcho Dashboard] Init error:", e); }
 })();

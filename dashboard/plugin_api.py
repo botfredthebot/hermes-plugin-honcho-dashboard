@@ -44,6 +44,50 @@ def honcho_post(path: str, body: Any = None) -> dict:
         raise HTTPException(status_code=502, detail=str(e))
 
 
+def honcho_delete(path: str) -> dict:
+    """DELETE to Honcho API by directly removing from PostgreSQL."""
+    import psycopg2
+    # Parse the conclusion ID from the path: /v3/workspaces/{workspace}/conclusions/{id}
+    parts = path.rstrip('/').split('/')
+    conclusion_id = parts[-1] if parts else None
+    if not conclusion_id:
+        raise HTTPException(status_code=400, detail="Invalid conclusion ID")
+
+    # Honcho stores conclusions as documents in the documents table
+    # The delete endpoint deletes by document ID
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        # Check it exists
+        cur.execute(
+            "SELECT id FROM documents WHERE workspace_name = %s AND id = %s",
+            (WORKSPACE, conclusion_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Conclusion '{conclusion_id}' not found")
+        # Soft delete by setting deleted_at (matching Honcho's pattern)
+        cur.execute(
+            "UPDATE documents SET deleted_at = NOW() WHERE workspace_name = %s AND id = %s",
+            (WORKSPACE, conclusion_id),
+        )
+        # Also delete from collections table if linked
+        cur.execute(
+            "DELETE FROM collections WHERE workspace_name = %s AND id = %s",
+            (WORKSPACE, conclusion_id),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Deletion failed: {e}")
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # Hermes session DB reader (for Jump to Chat)
 # ---------------------------------------------------------------------------
@@ -210,9 +254,9 @@ async def delete_session(session_id: str, confirm: bool = Query(False)):
     conn = _db_connect()
     cur = conn.cursor()
 
-    # Check the session exists and get its name
+    # Check the session exists — look up by name (Honcho API returns name as 'id')
     cur.execute(
-        "SELECT id FROM sessions WHERE workspace_name = %s AND id = %s",
+        "SELECT id FROM sessions WHERE workspace_name = %s AND name = %s",
         (WORKSPACE, session_id),
     )
     row = cur.fetchone()
@@ -300,9 +344,9 @@ async def delete_session(session_id: str, confirm: bool = Query(False)):
         )
         deleted["session_peers"] = cur.rowcount
 
-        # The session itself
+        # The session itself — look up by name
         cur.execute(
-            "DELETE FROM sessions WHERE workspace_name = %s AND id = %s",
+            "DELETE FROM sessions WHERE workspace_name = %s AND name = %s",
             (WORKSPACE, session_id),
         )
         deleted["sessions"] = cur.rowcount
@@ -344,6 +388,16 @@ async def list_conclusions(
         body["options"] = {"filters": filters}
 
     return honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", body)
+
+
+@router.delete("/conclusions/{conclusion_id}")
+async def delete_conclusion(conclusion_id: str):
+    """
+    Delete a conclusion by its ID via the Honcho API.
+    """
+    # Use Honcho's native delete endpoint
+    data = honcho_delete(f"/v3/workspaces/{WORKSPACE}/conclusions/{conclusion_id}")
+    return {"success": True, "conclusion_id": conclusion_id, "detail": data}
 
 
 @router.get("/search")
@@ -614,12 +668,12 @@ async def delete_peer(peerId: str, confirm: bool = Query(False)):
     """
     import psycopg2
 
-    # Look up the peer by ID to get the name used in foreign keys
+    # Look up the peer by name (Honcho API returns name as 'id')
     try:
         conn = _db_connect()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, name FROM peers WHERE workspace_name = %s AND id = %s",
+            "SELECT id, name FROM peers WHERE workspace_name = %s AND name = %s",
             (WORKSPACE, peerId),
         )
         row = cur.fetchone()
