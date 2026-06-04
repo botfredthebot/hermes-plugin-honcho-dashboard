@@ -788,52 +788,42 @@ def _get_installed_version() -> str | None:
 def _get_latest_version() -> str | None:
     """
     Check the Docker registry for the latest available version of honcho-api.
-    Uses `docker pull --dry-run` (Docker 24+) or falls back to inspecting
-    the remote manifest digest vs local image digest.
+    For images with no remote registry (local-only), returns the installed version.
     """
     import subprocess
-    # Strategy 1: docker manifest inspect to get the remote digest without pulling
-    try:
-        result = subprocess.run(
-            ["docker", "manifest", "inspect", "honcho-api:latest"],
-            capture_output=True, text=True, timeout=15
-        )
-        if result.returncode == 0:
-            manifest = json.loads(result.stdout)
-            # The manifest may contain a config digest we can use to compare
-            # But it won't give us the version directly — we need to check labels
-            if isinstance(manifest, dict):
-                config = manifest.get("config", {})
-                if config.get("digest"):
-                    return _version_from_digest(config["digest"])
-            # Multi-arch manifest: check platform entries
-            if isinstance(manifest, list) and manifest:
-                for entry in manifest:
-                    plat = entry.get("platform", {})
-                    if plat.get("os") == "linux" and plat.get("architecture") == "amd64":
-                        pass
-    except Exception:
-        pass
 
-    # Strategy 2: Pull the image and check if a new one was downloaded
-    # This is the most reliable for custom/private registries
+    # Strategy 1: Try docker pull and check output
     try:
         result = subprocess.run(
             ["docker", "pull", "honcho-api:latest"],
             capture_output=True, text=True, timeout=120
         )
+        output = result.stdout + result.stderr
         if result.returncode == 0:
-            output = result.stdout + result.stderr
             if "Downloaded newer image" in output or "Status: Downloaded" in output:
-                # New image was pulled — read its version
+                # New image was pulled — read its version from the new container
                 return _get_installed_version()
             elif "Image is up to date" in output or "Status: Image is up to date" in output:
-                # Already on latest — return installed version
+                # Already on latest
                 return _get_installed_version()
+        else:
+            # pull failed — check if it's a "local only" image (no remote registry)
+            # This is NOT an error for locally-built images
+            err_lower = output.lower()
+            is_local_only = (
+                "pull access denied" in err_lower
+                or "repository does not exist" in err_lower
+                or "not found" in err_lower
+            )
+            if is_local_only:
+                # Image is local-only, no remote registry — installed == latest
+                return _get_installed_version()
+            # Other errors (network, auth, etc.) — return None to signal uncertainty
+            return None
+    except subprocess.TimeoutExpired:
+        return None
     except Exception:
-        pass
-
-    return None
+        return None
 
 
 def _version_from_digest(digest: str) -> str | None:

@@ -107,6 +107,20 @@ class TestVersionCheck:
         data = resp.json()
         assert data["update_available"] is False
 
+    @patch("dashboard.plugin_api._get_installed_version")
+    @patch("dashboard.plugin_api._get_latest_version")
+    def test_version_check_local_only_image(self, mock_latest, mock_installed):
+        """For local-only images, latest == installed, so update_available is False."""
+        mock_installed.return_value = "3.8.7"
+        mock_latest.return_value = "3.8.7"
+        resp = client.get(f"{API_PREFIX}/version-check")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["installed"] == "3.8.7"
+        assert data["latest"] == "3.8.7"
+        assert data["update_available"] is False
+        assert "Up to date" in data["message"]
+
 
 # =================================================================== #
 # POST /update — Pull + Restart
@@ -211,3 +225,85 @@ class TestGetInstalledVersion:
         from dashboard.plugin_api import _get_installed_version
         result = _get_installed_version()
         assert result is None
+
+
+# =================================================================== #
+# _get_latest_version — Local-only image handling
+# =================================================================== #
+
+class TestGetLatestVersion:
+    """Tests for the _get_latest_version helper."""
+
+    @patch("dashboard.plugin_api._get_installed_version", return_value="3.0.7")
+    @patch("subprocess.run")
+    def test_local_only_image_returns_installed(self, mock_run, mock_installed):
+        """When docker pull fails with 'pull access denied', should return installed version."""
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="Error response from daemon: pull access denied for honcho-api, repository does not exist"
+        )
+        from dashboard.plugin_api import _get_latest_version
+        result = _get_latest_version()
+        # Should return the installed version since it's a local-only image
+        assert result == "3.0.7"
+
+    @patch("dashboard.plugin_api._get_installed_version", return_value="3.0.7")
+    @patch("subprocess.run")
+    def test_repository_not_found_returns_installed(self, mock_run, mock_installed):
+        """When docker pull fails with 'repository does not exist', should return installed."""
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="Error: repository honcho-api not found"
+        )
+        from dashboard.plugin_api import _get_latest_version
+        result = _get_latest_version()
+        assert result == "3.0.7"
+
+    @patch("subprocess.run")
+    def test_network_error_returns_none(self, mock_run):
+        """When docker pull fails with a network error, should return None."""
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled"
+        )
+        from dashboard.plugin_api import _get_latest_version
+        result = _get_latest_version()
+        assert result is None
+
+    @patch("subprocess.run")
+    def test_timeout_returns_none(self, mock_run):
+        """When docker pull times out, should return None."""
+        import subprocess
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="docker", timeout=120)
+        from dashboard.plugin_api import _get_latest_version
+        result = _get_latest_version()
+        assert result is None
+
+    @patch("dashboard.plugin_api._get_installed_version", return_value="3.0.7")
+    @patch("subprocess.run")
+    def test_pull_success_up_to_date(self, mock_run, mock_installed):
+        """When docker pull succeeds and image is up to date, should return installed version."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Status: Image is up to date for honcho-api:latest",
+            stderr=""
+        )
+        from dashboard.plugin_api import _get_latest_version
+        result = _get_latest_version()
+        assert result == "3.0.7"
+
+    @patch("dashboard.plugin_api._get_installed_version", return_value="3.1.0")
+    @patch("subprocess.run")
+    def test_pull_success_new_image(self, mock_run, mock_installed):
+        """When docker pull downloads a new image, should return new version."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Downloaded newer image for honcho-api:latest",
+            stderr=""
+        )
+        from dashboard.plugin_api import _get_latest_version
+        result = _get_latest_version()
+        assert result == "3.1.0"
