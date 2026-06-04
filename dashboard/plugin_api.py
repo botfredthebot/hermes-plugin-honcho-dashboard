@@ -643,11 +643,21 @@ async def search_messages(
 async def analytics():
     """14-day message and conclusion counts for analytics tab."""
     sessions = honcho_post(f"/v3/workspaces/{WORKSPACE}/sessions/list", {"limit": 200})
-    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 200})
     peers = honcho_post(f"/v3/workspaces/{WORKSPACE}/peers/list", {"limit": 100})
 
+    # Paginate through all conclusions for accurate counts
+    all_conclusion_items = []
+    page = 1
+    while True:
+        conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 200, "page": page})
+        all_conclusion_items.extend(conclusions.get("items", []))
+        pages = conclusions.get("pages", 1)
+        if page >= pages:
+            break
+        page += 1
+    total_conclusions = conclusions.get("total", len(all_conclusion_items))
+
     session_items = sessions.get("items", [])
-    conclusion_items = conclusions.get("items", [])
     peer_items = peers.get("items", [])
 
     # Bucket by day
@@ -663,7 +673,7 @@ async def analytics():
         if s.get("created_at"):
             day = s["created_at"][:10]
             msg_by_day[day] = msg_by_day.get(day, 0) + 1
-    for c in conclusion_items:
+    for c in all_conclusion_items:
         if c.get("created_at"):
             day = c["created_at"][:10]
             conc_by_day[day] = conc_by_day.get(day, 0) + 1
@@ -683,7 +693,7 @@ async def analytics():
     return {
         "total_sessions": len(session_items),
         "total_messages": total_messages,
-        "total_conclusions": len(conclusion_items),
+        "total_conclusions": total_conclusions,
         "total_peers": len(peer_items),
         "days": days,
         "messages_by_day": {d: msg_by_day.get(d, 0) for d in days},
