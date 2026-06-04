@@ -1424,6 +1424,7 @@
       deriver: true, dialectic: true, summary: true, dream: true,
       peerCards: true, embedding: true, cache: true, app: true,
       auth: true, vectorStore: true, models: true, import: true,
+      workspaceOverrides: true,
     }), collapsed = _u11[0], setCollapsed = _u11[1];
     // Import state
     var _u12 = useState(null), impSessions = _u12[0], setImpSessions = _u12[1];
@@ -1443,6 +1444,18 @@
       var next = Object.assign({}, collapsed);
       next[key] = !next[key];
       setCollapsed(next);
+    }
+
+    function expandAll() {
+      var all = {};
+      Object.keys(collapsed).forEach(function (k) { all[k] = true; });
+      setCollapsed(all);
+    }
+
+    function collapseAll() {
+      var all = {};
+      Object.keys(collapsed).forEach(function (k) { all[k] = false; });
+      setCollapsed(all);
     }
 
     function loadConfig() {
@@ -1565,15 +1578,15 @@
     }
 
     // Collapsible section wrapper
-    function renderSection(key, title, icon, children) {
+    function renderSection(key, title, icon, children, headerExtra) {
       var isCollapsed = !collapsed[key];
       return h("div", {style: {marginBottom: 14}},
         h("div", {
           onClick: function () { toggleSection(key); },
           style: {display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", padding: "6px 0"}
         },
-          h("div", {style: {fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9"}}, icon, " ", title),
-          h("span", {style: {fontSize: "0.75em", color: "#8b949e"}}, isCollapsed ? "▸" : "▾")
+          h("div", {style: {fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9"}}, icon, " ", title, headerExtra || null),
+          h("span", {style: {fontSize: "2.25em", color: "#8b949e", lineHeight: 1}}, isCollapsed ? "▸" : "▾")
         ),
         isCollapsed ? null : h("div", {style: {background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px"}}, children)
       );
@@ -1734,7 +1747,11 @@
 
     return h("div", null,
       h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16}},
-        h("h2", {style: {margin: 0}}, "Configuration")
+        h("h2", {style: {margin: 0}}, "Configuration"),
+        h("div", {style: {display: "flex", gap: 6}},
+          h("button", {onClick: expandAll, style: S.btnSmall}, "▾ Expand All"),
+          h("button", {onClick: collapseAll, style: S.btnSmall}, "▸ Collapse All")
+        )
       ),
 
       // ── GLOBAL SETTINGS ─────────────────────────────────────────────
@@ -1844,124 +1861,123 @@
       ),
 
       // ── WORKSPACE OVERRIDES ──────────────────────────────────────────
-      h("div", {style: S.section},
-        h("div", {style: S.sectionTitle}, "🔧 Workspace Overrides"),
-        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Override global defaults. Greyed-out = using global default."),
-        h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 14}},
-          saveMsg ? h("span", {style: {fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149"}}, saveMsg.text) : null,
-          h("button", {onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary}, saving ? "Saving…" : "💾 Save Workspace Overrides")
-        ),
-        renderToggle("Enable Reasoning", "reasoning.enabled", true, "Override global deriver setting"),
-        renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions"),
-        h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Peer Cards"),
-        renderToggle("Use Peer Cards", "peer_card.use", true, "Override global peer card setting"),
-        renderToggle("Create Peer Cards", "peer_card.create", true, "Override global peer card creation"),
-        h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Summaries"),
-        renderToggle("Enable Summaries", "summary.enabled", true, "Override global summary setting"),
-        renderNumber("Messages per Short", "summary.messages_per_short_summary", true, "Min 10", 10, 500),
-        renderNumber("Messages per Long", "summary.messages_per_long_summary", true, "Min 20", 20, 1000),
-        h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Dream"),
-        renderToggle("Enable Dream", "dream.enabled", true, "Override global dream setting")
+      renderSection("workspaceOverrides", "Workspace Overrides", "🔧",
+        h("div", null,
+          h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Override global defaults. Greyed-out = using global default."),
+          h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 14}},
+            saveMsg ? h("span", {style: {fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149"}}, saveMsg.text) : null,
+            h("button", {onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary}, saving ? "Saving…" : "💾 Save Workspace Overrides")
+          ),
+          renderToggle("Enable Reasoning", "reasoning.enabled", true, "Override global deriver setting"),
+          renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions"),
+          h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Peer Cards"),
+          renderToggle("Use Peer Cards", "peer_card.use", true, "Override global peer card setting"),
+          renderToggle("Create Peer Cards", "peer_card.create", true, "Override global peer card creation"),
+          h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Summaries"),
+          renderToggle("Enable Summaries", "summary.enabled", true, "Override global summary setting"),
+          renderNumber("Messages per Short", "summary.messages_per_short_summary", true, "Min 10", 10, 500),
+          renderNumber("Messages per Long", "summary.messages_per_long_summary", true, "Min 20", 20, 1000),
+          h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Dream"),
+          renderToggle("Enable Dream", "dream.enabled", true, "Override global dream setting")
+        )
       ),
 
       // ── IMPORT FROM HERMES ───────────────────────────────────────────
-      h("div", {style: S.section},
-        h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}},
-          h("div", {style: S.sectionTitle, style: Object.assign({}, S.sectionTitle, {marginBottom: 0})}, "📥 Import from Hermes"),
-          impResult && impResult.summary
-            ? h("span", {style: {fontSize: "0.78em", color: impResult.success ? "#3fb950" : "#f85149"}},
-                impResult.dry_run ? "Dry run" : "Done",
-                " · " + impResult.summary.imported + " imported, " + impResult.summary.errors + " errors"
+      renderSection("import", "Import from Hermes", "📥",
+        h("div", null,
+          // Peer mapping
+          h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Map Hermes conversation roles to Honcho peers."),
+          h("div", {style: {display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12}},
+            h("div", null,
+              h("label", {style: {fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4}}, "User role →"),
+              h("select", {value: impUserPeer, onChange: function (e) { setUserPeer(e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
+                h("option", {value: ""}, "Select peer…"),
+                impPeerItems.map(function (p) { return h("option", {key: p.id, value: p.id}, p.name || p.id); })
+              )
+            ),
+            h("div", null,
+              h("label", {style: {fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4}}, "Assistant role →"),
+              h("select", {value: impAsstPeer, onChange: function (e) { setAsstPeer(e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
+                h("option", {value: ""}, "Select peer…"),
+                impPeerItems.map(function (p) { return h("option", {key: p.id, value: p.id}, p.name || p.id); })
+              )
+            )
+          ),
+
+          // Session list
+          h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap"}},
+            h("input", {type: "text", placeholder: "Filter sessions…", value: impFilter, onChange: function (e) { setImpFilter(e.target.value); }, style: Object.assign({}, S.input, {flex: 1, minWidth: 200})}),
+            h("button", {onClick: impSelectAll, style: S.btn}, "Select All"),
+            h("button", {onClick: impDeselectAll, style: S.btn}, "Select None"),
+            h("label", {style: {display: "flex", alignItems: "center", gap: 4, fontSize: "0.78em", color: "#8b949e"}},
+              h("input", {type: "checkbox", checked: impDryRun, onChange: function (e) { setImpDryRun(e.target.checked); }}),
+              "Dry run"
+            )
+          ),
+
+          h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 8}},
+            impSelected.length + " selected" + (impTotalMessages > 0 ? " · ~" + impTotalMessages + " messages" : "") +
+            (impSessions ? " · " + impSessions.imported_count + " already imported" : "")
+          ),
+
+          (impSelected.length > 5 || impTotalMessages > 500)
+            ? h("div", {style: {padding: "8px 12px", background: "#3f2c00", border: "1px solid #d29922", borderRadius: 6, marginBottom: 12, fontSize: "0.78em", color: "#d29922"}},
+                "⚠️ Large import (" + impSelected.length + " sessions, ~" + impTotalMessages + " messages). This may take a while.")
+            : null,
+
+          h("div", {style: {maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6}},
+            impFilteredSessions().map(function (s) {
+              var isSel = impSelected.indexOf(s.id) >= 0;
+              return h("div", {key: s.id, style: {display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid #21262d", background: isSel ? "#161b22" : "transparent", opacity: s.already_imported ? 0.6 : 1}},
+                h("input", {type: "checkbox", checked: isSel, onChange: function () { impToggleSession(s.id); }}),
+                h("div", {style: {flex: 1, minWidth: 0}},
+                  h("div", {style: {fontSize: "0.82em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}, s.title || s.id),
+                  h("div", {style: {fontSize: "0.7em", color: "#8b949e", marginTop: 2}}, impFormatDate(s.started_at) + " · " + s.source + " · " + s.user_messages + " user / " + s.assistant_messages + " asst")
+                ),
+                s.already_imported
+                  ? h("span", {style: {fontSize: "0.68em", color: "#3fb950", padding: "2px 6px", background: "#0d1117", borderRadius: 4, border: "1px solid #238636", whiteSpace: "nowrap"}}, "✓ imported")
+                  : null
+              );
+            })
+          ),
+
+          // Import button
+          h("div", {style: {marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}},
+            impResult && impResult.success && !impDryRun
+              ? h("button", {onClick: function () { loadImportSessions(); setImpResult(null); }, style: S.btnPrimary}, "🔄 Refresh List")
+              : h("button", {onClick: impHandleImport, disabled: impImporting || impSelected.length === 0 || !impUserPeer || !impAsstPeer, style: (impSelected.length > 0 && impUserPeer && impAsstPeer) ? S.btnPrimary : S.btn},
+                  impImporting ? "Importing…" : (impDryRun ? "🔍 Dry Run (" + impSelected.length + ")" : "📥 Import " + impSelected.length + " Session" + (impSelected.length !== 1 ? "s" : ""))
+                ),
+            impImporting ? h("span", {style: {fontSize: "0.75em", color: "#8b949e"}}, "Processing…") : null
+          ),
+
+          // Import results
+          impResult && impResult.results
+            ? h("div", {style: {marginTop: 16, border: "1px solid #21262d", borderRadius: 6, overflow: "hidden"}},
+                h("div", {style: {padding: "8px 12px", background: "#161b22", borderBottom: "1px solid #21262d", fontWeight: 600, fontSize: "0.82em"}}, "Import Results (" + impResult.results.length + " sessions)"),
+                h("div", {style: {maxHeight: 300, overflowY: "auto"}},
+                  impResult.results.map(function (r, idx) {
+                    return h("div", {key: idx, style: {padding: "8px 12px", borderBottom: "1px solid #21262d", background: r.success ? "transparent" : "#2b0d0d"}},
+                      h("div", {style: {display: "flex", alignItems: "center", gap: 8}},
+                        h("span", {style: {color: r.success ? "#3fb950" : "#f85149"}}, r.success ? "✓" : "✗"),
+                        h("span", {style: {fontSize: "0.82em", fontWeight: 600}}, r.session_id),
+                        h("span", {style: {fontSize: "0.7em", color: "#8b949e"}}, r.success ? "imported" : r.error)
+                      )
+                    );
+                  })
+                )
               )
             : null
         ),
-
-        // Peer mapping
-        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Map Hermes conversation roles to Honcho peers."),
-        h("div", {style: {display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12}},
-          h("div", null,
-            h("label", {style: {fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4}}, "User role →"),
-            h("select", {value: impUserPeer, onChange: function (e) { setUserPeer(e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
-              h("option", {value: ""}, "Select peer…"),
-              impPeerItems.map(function (p) { return h("option", {key: p.id, value: p.id}, p.name || p.id); })
-            )
-          ),
-          h("div", null,
-            h("label", {style: {fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4}}, "Assistant role →"),
-            h("select", {value: impAsstPeer, onChange: function (e) { setAsstPeer(e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
-              h("option", {value: ""}, "Select peer…"),
-              impPeerItems.map(function (p) { return h("option", {key: p.id, value: p.id}, p.name || p.id); })
-            )
-          )
-        ),
-
-        // Session list
-        h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap"}},
-          h("input", {type: "text", placeholder: "Filter sessions…", value: impFilter, onChange: function (e) { setImpFilter(e.target.value); }, style: Object.assign({}, S.input, {flex: 1, minWidth: 200})}),
-          h("button", {onClick: impSelectAll, style: S.btn}, "Select All"),
-          h("button", {onClick: impDeselectAll, style: S.btn}, "Select None"),
-          h("label", {style: {display: "flex", alignItems: "center", gap: 4, fontSize: "0.78em", color: "#8b949e"}},
-            h("input", {type: "checkbox", checked: impDryRun, onChange: function (e) { setImpDryRun(e.target.checked); }}),
-            "Dry run"
-          )
-        ),
-
-        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 8}},
-          impSelected.length + " selected" + (impTotalMessages > 0 ? " · ~" + impTotalMessages + " messages" : "") +
-          (impSessions ? " · " + impSessions.imported_count + " already imported" : "")
-        ),
-
-        (impSelected.length > 5 || impTotalMessages > 500)
-          ? h("div", {style: {padding: "8px 12px", background: "#3f2c00", border: "1px solid #d29922", borderRadius: 6, marginBottom: 12, fontSize: "0.78em", color: "#d29922"}},
-              "⚠️ Large import (" + impSelected.length + " sessions, ~" + impTotalMessages + " messages). This may take a while.")
-          : null,
-
-        h("div", {style: {maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6}},
-          impFilteredSessions().map(function (s) {
-            var isSel = impSelected.indexOf(s.id) >= 0;
-            return h("div", {key: s.id, style: {display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid #21262d", background: isSel ? "#161b22" : "transparent", opacity: s.already_imported ? 0.6 : 1}},
-              h("input", {type: "checkbox", checked: isSel, onChange: function () { impToggleSession(s.id); }}),
-              h("div", {style: {flex: 1, minWidth: 0}},
-                h("div", {style: {fontSize: "0.82em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}, s.title || s.id),
-                h("div", {style: {fontSize: "0.7em", color: "#8b949e", marginTop: 2}}, impFormatDate(s.started_at) + " · " + s.source + " · " + s.user_messages + " user / " + s.assistant_messages + " asst")
-              ),
-              s.already_imported
-                ? h("span", {style: {fontSize: "0.68em", color: "#3fb950", padding: "2px 6px", background: "#0d1117", borderRadius: 4, border: "1px solid #238636", whiteSpace: "nowrap"}}, "✓ imported")
-                : null
-            );
-          })
-        ),
-
-        // Import button
-        h("div", {style: {marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}},
-          impResult && impResult.success && !impDryRun
-            ? h("button", {onClick: function () { loadImportSessions(); setImpResult(null); }, style: S.btnPrimary}, "🔄 Refresh List")
-            : h("button", {onClick: impHandleImport, disabled: impImporting || impSelected.length === 0 || !impUserPeer || !impAsstPeer, style: (impSelected.length > 0 && impUserPeer && impAsstPeer) ? S.btnPrimary : S.btn},
-                impImporting ? "Importing…" : (impDryRun ? "🔍 Dry Run (" + impSelected.length + ")" : "📥 Import " + impSelected.length + " Session" + (impSelected.length !== 1 ? "s" : ""))
-              ),
-          impImporting ? h("span", {style: {fontSize: "0.75em", color: "#8b949e"}}, "Processing…") : null
-        ),
-
-        // Import results
-        impResult && impResult.results
-          ? h("div", {style: {marginTop: 16}},
-              h("div", {style: S.sectionTitle}, impResult.dry_run ? "Dry Run Results" : "Import Results"),
-              h("div", {style: {maxHeight: 300, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6}},
-                impResult.results.map(function (r, i) {
-                  var color = r.status === "imported" ? "#3fb950" : r.status === "error" ? "#f85149" : r.status === "dry_run" ? "#58a6ff" : "#8b949e";
-                  var icon = r.status === "imported" ? "✓" : r.status === "error" ? "✗" : r.status === "dry_run" ? "🔍" : "○";
-                  return h("div", {key: i, style: {padding: "6px 12px", borderBottom: "1px solid #21262d", fontSize: "0.78em"}},
-                    h("span", {style: {color: color, marginRight: 6}}, icon),
-                    h("span", null, r.session_id.slice(0, 20)),
-                    r.honcho_session ? h("span", {style: {color: "#8b949e", marginLeft: 6}}, "→ " + r.honcho_session) : null,
-                    r.messages_imported != null ? h("span", {style: {color: "#8b949e", marginLeft: 6}}, "(" + r.messages_imported + " msgs)") : null,
-                    r.reason ? h("span", {style: {color: "#f85149", marginLeft: 6}}, "— " + r.reason) : null
-                  );
-                })
-              )
+        impResult && impResult.summary
+          ? h("span", {style: {fontSize: "0.78em", color: impResult.success ? "#3fb950" : "#f85149"}},
+              impResult.dry_run ? "Dry run" : "Done",
+              " · " + impResult.summary.imported + " imported, " + impResult.summary.errors + " errors"
             )
           : null
-      )
+      ),
+
+      // ── END OF CONFIG TAB ────────────────────────────────────────────
     );
   }
 
@@ -1980,8 +1996,8 @@
       { key: "peers", label: "Peers" },
       { key: "sessions", label: "Sessions" },
       { key: "conclusions", label: "Conclusions" },
-      { key: "status", label: "Status" },
       { key: "dreams", label: "Dreams" },
+      { key: "status", label: "Status" },
       { key: "config", label: "Config" },
     ];
 

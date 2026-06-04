@@ -244,18 +244,26 @@ class TestHonchoDashboardSmoke:
         real = [e for e in errors if "JS_ERROR" in e and _known not in e]
         assert not real
 
-    def test_analytics_tab_renders(self, page, errors):
-        """Analytics tab should render bar charts without JS errors."""
+    def test_analytics_on_status_tab(self, page, errors):
+        """Analytics section should render on the Status tab without JS errors."""
         navigate_to_honcho_tab(page)
-        page.click("text=Analytics", timeout=5_000)
-        page.wait_for_timeout(3_000)
+        page.click("text=Status", timeout=5_000)
+        page.wait_for_timeout(5_000)
+        # Scroll down to reveal analytics section at bottom
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(2_000)
         text = rendered_text(page)
-        assert "Messages per Day" in text or "per Day" in text
+        # Analytics section may show heading, chart labels, or stat cards
+        has_analytics = any(kw in text for kw in ["Messages per Day", "per Day", "Analytics", "Total Messages", "Total Sessions", "Total Conclusions"])
+        if not has_analytics:
+            # Check for JS errors that might indicate why analytics didn't load
+            analytics_errors = [e for e in errors if "analytics" in e.lower() or "status" in e.lower()]
+            assert has_analytics, f"Analytics section not found on Status tab. Errors: {analytics_errors[:3]}"
 
     def test_all_subtabs_navigable(self, page, errors):
         """All Honcho subtabs should render without JS errors."""
         navigate_to_honcho_tab(page)
-        for subtab in ["Overview", "Peers", "Sessions", "Conclusions", "Search", "Analytics", "Status"]:
+        for subtab in ["Overview", "Peers", "Sessions", "Conclusions", "Dreams", "Status", "Config"]:
             try:
                 page.click(f"text={subtab}", timeout=3_000)
                 page.wait_for_timeout(1_500)
