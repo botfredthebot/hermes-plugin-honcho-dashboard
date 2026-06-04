@@ -325,6 +325,8 @@
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), deleteTarget = _u3[0], setDeleteTarget = _u3[1];
     var _u4 = useState(false), deleting = _u4[0], setDeleting = _u4[1];
+    var _u5 = useState(false), deleteAllConfirming = _u5[0], setDeleteAllConfirming = _u5[1];
+    var _u6 = useState(false), deletingAll = _u6[0], setDeletingAll = _u6[1];
 
     function loadPeers() {
       setLoading(true);
@@ -358,9 +360,39 @@
         .finally(function () { setDeleting(false); });
     }
 
+    function handleDeleteAllPeers() {
+      if (peers.length === 0) return;
+      if (!window.confirm("Delete ALL " + peers.length + " peers and their associated data?\n\nThis will remove: all peers, all messages, documents, collections, and session links. This cannot be undone.")) {
+        return;
+      }
+      setDeletingAll(true);
+      fetch(API + "/peers/all?confirm=true", {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert("All " + (d.peer_count || 0) + " peers deleted.");
+            setDeleteAllConfirming(false);
+            loadPeers();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete all failed: " + e.message); })
+        .finally(function () { setDeletingAll(false); });
+    }
+
     return h("div", null,
-      h("div", { style: { fontWeight: 600, fontSize: "0.92em", color: "#8b949e", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em" } },
-        "Peers (" + peers.length + ")"
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
+        h("div", { style: { fontWeight: 600, fontSize: "0.92em", color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.05em" } },
+          "Peers (" + peers.length + ")"
+        ),
+        peers.length > 0
+          ? h("button", { onClick: handleDeleteAllPeers, disabled: deletingAll, style: S.btnDelete },
+              deletingAll ? "Deleting…" : "🗑 Delete All (" + peers.length + ")")
+          : null
       ),
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
@@ -434,6 +466,7 @@
     var _u4 = useState(null), deleteTarget = _u4[0], setDeleteTarget = _u4[1];
     var _u5 = useState(null), deletePreview = _u5[0], setDeletePreview = _u5[1];
     var _u6 = useState(false), deleting = _u6[0], setDeleting = _u6[1];
+    var _u7 = useState(false), deletingAll = _u7[0], setDeletingAll = _u7[1];
 
     function loadSessions() {
       setLoading(true);
@@ -510,6 +543,29 @@
       });
     }
 
+    function handleDeleteAllSessions() {
+      if (sessions.length === 0) return;
+      if (!window.confirm("Delete ALL " + sessions.length + " sessions and their associated data?\n\nThis will remove: all sessions, all messages, embeddings, and peer links. This cannot be undone.")) {
+        return;
+      }
+      setDeletingAll(true);
+      fetch(API + "/sessions/all?confirm=true", {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert("All " + (d.session_count || 0) + " sessions deleted.");
+            loadSessions();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete all failed: " + e.message); })
+        .finally(function () { setDeletingAll(false); });
+    }
+
     return h("div", null,
       // Header
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
@@ -521,10 +577,16 @@
               )
             : null
         ),
-        emptySessions.length > 0
-          ? h("button", { onClick: deleteAllEmpty, style: S.btnDelete },
-              "🗑 Delete All Empty (", emptySessions.length, ")")
-          : null
+        h("div", { style: { display: "flex", gap: 8 } },
+          sessions.length > 0
+            ? h("button", { onClick: handleDeleteAllSessions, disabled: deletingAll, style: S.btnDelete },
+                deletingAll ? "Deleting…" : "🗑 Delete All (" + sessions.length + ")")
+            : null,
+          emptySessions.length > 0
+            ? h("button", { onClick: deleteAllEmpty, style: S.btnDelete },
+                "🗑 Delete All Empty (" + emptySessions.length + ")")
+            : null
+        )
       ),
 
       // Session list
@@ -643,6 +705,7 @@
     var _u3 = useState(""), filterPeer = _u3[0], setFilterPeer = _u3[1];
     var _u4 = useState([]), allPeers = _u4[0], setAllPeers = _u4[1];
     var _u5 = useState(null), deleteTarget = _u5[0], setDeleteTarget = _u5[1];
+    var _u6 = useState(false), deletingAll = _u6[0], setDeletingAll = _u6[1];
 
     // Load conclusions (filtered)
     function loadConclusions() {
@@ -684,6 +747,29 @@
         .catch(function (e) { alert("Delete failed: " + e.message); });
     }
 
+    function handleDeleteAllConclusions() {
+      if (conclusions.length === 0) return;
+      if (!window.confirm("Delete ALL " + conclusions.length + " conclusions?\n\nThis cannot be undone.")) {
+        return;
+      }
+      setDeletingAll(true);
+      fetch(API + "/conclusions/all?confirm=true", {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            alert(d.deleted + " conclusions deleted" + (d.errors > 0 ? " (" + d.errors + " errors)" : "") + ".");
+            loadConclusions();
+          } else {
+            alert("Error: " + (d.detail || "Unknown error"));
+          }
+        })
+        .catch(function (e) { alert("Delete all failed: " + e.message); })
+        .finally(function () { setDeletingAll(false); });
+    }
+
     // Build peer options from loaded peers
     var peerOptions = allPeers.map(function (p) {
       var label = p.metadata && p.metadata.name ? p.metadata.name : p.id;
@@ -692,7 +778,7 @@
 
     return h("div", null,
       // Filter row
-      h("div", { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
+      h("div", { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
         h("select", {
           style: S.select,
           value: filterPeer,
@@ -703,7 +789,11 @@
             return h("option", { key: opt.value, value: opt.value }, opt.label);
           })
         ),
-        filterPeer ? h("button", { onClick: function () { setFilterPeer(""); }, style: S.btn }, "✕ Clear") : null
+        filterPeer ? h("button", { onClick: function () { setFilterPeer(""); }, style: S.btn }, "✕ Clear") : null,
+        conclusions.length > 0
+          ? h("button", { onClick: handleDeleteAllConclusions, disabled: deletingAll, style: S.btnDelete },
+              deletingAll ? "Deleting…" : "🗑 Delete All (" + conclusions.length + ")")
+          : null
       ),
 
       // Conclusions list

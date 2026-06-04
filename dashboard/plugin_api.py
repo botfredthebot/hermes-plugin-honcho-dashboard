@@ -417,6 +417,38 @@ async def list_conclusions(
     return honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", body)
 
 
+@router.delete("/conclusions/all")
+async def delete_all_conclusions(confirm: bool = Query(False)):
+    """
+    Delete all conclusions from the workspace.
+    Requires ?confirm=true to actually perform the deletion.
+    """
+    # Use Honcho's native API to delete all conclusions
+    # First get the list, then delete each (Honcho API doesn't have a bulk delete)
+    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 1000})
+    items = conclusions.get("items", [])
+
+    if not items:
+        return {"success": True, "deleted": 0, "message": "No conclusions to delete."}
+
+    if not confirm:
+        return {
+            "confirmation_required": True,
+            "conclusion_count": len(items),
+            "message": f"Add ?confirm=true to delete all {len(items)} conclusions.",
+        }
+
+    deleted = 0
+    errors = 0
+    for c in items:
+        try:
+            honcho_delete(f"/v3/workspaces/{WORKSPACE}/conclusions/{c['id']}")
+            deleted += 1
+        except Exception:
+            errors += 1
+
+    return {"success": True, "deleted": deleted, "errors": errors, "total": len(items)}
+
 @router.delete("/conclusions/{conclusion_id}")
 async def delete_conclusion(conclusion_id: str):
     """
@@ -425,6 +457,148 @@ async def delete_conclusion(conclusion_id: str):
     # Use Honcho's native delete endpoint
     data = honcho_delete(f"/v3/workspaces/{WORKSPACE}/conclusions/{conclusion_id}")
     return {"success": True, "conclusion_id": conclusion_id, "detail": data}
+
+
+@router.delete("/peers/all")
+async def delete_all_peers(confirm: bool = Query(False)):
+    """
+    Delete all peers and their associated data from the workspace.
+    Requires ?confirm=true to actually perform the deletion.
+    """
+    import psycopg2
+
+    conn = _db_connect()
+    cur = conn.cursor()
+
+    # Count peers for preview
+    cur.execute("SELECT COUNT(*) FROM peers WHERE workspace_name = %s", (WORKSPACE,))
+    peer_count = cur.fetchone()[0]
+
+    if not confirm:
+        cur.close()
+        conn.close()
+        return {
+            "confirmation_required": True,
+            "peer_count": peer_count,
+            "message": f"Add ?confirm=true to delete all {peer_count} peers and their associated data.",
+        }
+
+    # Delete all peers using the same cascade pattern as single peer delete
+    deleted = {}
+    try:
+        # Get all peer names
+        cur.execute("SELECT name FROM peers WHERE workspace_name = %s", (WORKSPACE,))
+        peer_names = [r[0] for r in cur.fetchall()]
+
+        for peer_name in peer_names:
+            cur.execute(
+                "DELETE FROM queue WHERE workspace_name = %s AND message_id IN (SELECT id FROM messages WHERE workspace_name = %s AND peer_name = %s)",
+                (WORKSPACE, WORKSPACE, peer_name),
+            )
+            cur.execute(
+                "DELETE FROM documents WHERE workspace_name = %s AND (observed = %s OR observer = %s)",
+                (WORKSPACE, peer_name, peer_name),
+            )
+            cur.execute(
+                "DELETE FROM collections WHERE workspace_name = %s AND (observed = %s OR observer = %s)",
+                (WORKSPACE, peer_name, peer_name),
+            )
+            cur.execute(
+                "DELETE FROM message_embeddings WHERE workspace_name = %s AND peer_name = %s",
+                (WORKSPACE, peer_name),
+            )
+            cur.execute(
+                "DELETE FROM messages WHERE workspace_name = %s AND peer_name = %s",
+                (WORKSPACE, peer_name),
+            )
+            cur.execute(
+                "DELETE FROM session_peers WHERE workspace_name = %s AND peer_name = %s",
+                (WORKSPACE, peer_name),
+            )
+            cur.execute(
+                "DELETE FROM peers WHERE workspace_name = %s AND name = %s",
+                (WORKSPACE, peer_name),
+            )
+
+        conn.commit()
+        deleted["peers"] = len(peer_names)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    return {"success": True, "deleted": deleted, "peer_count": peer_count}
+
+
+@router.delete("/sessions/all")
+async def delete_all_sessions(confirm: bool = Query(False)):
+    """
+    Delete all sessions and their associated data from the workspace.
+    Requires ?confirm=true to actually perform the deletion.
+    """
+    import psycopg2
+
+    conn = _db_connect()
+    cur = conn.cursor()
+
+    # Count sessions for preview
+    cur.execute("SELECT COUNT(*) FROM sessions WHERE workspace_name = %s", (WORKSPACE,))
+    session_count = cur.fetchone()[0]
+
+    if not confirm:
+        cur.close()
+        conn.close()
+        return {
+            "confirmation_required": True,
+            "session_count": session_count,
+            "message": f"Add ?confirm=true to delete all {session_count} sessions and their associated data.",
+        }
+
+    deleted = {}
+    try:
+        # Get all session names
+        cur.execute("SELECT name FROM sessions WHERE workspace_name = %s", (WORKSPACE,))
+        session_names = [r[0] for r in cur.fetchall()]
+
+        for session_name in session_names:
+            cur.execute(
+                "DELETE FROM queue WHERE workspace_name = %s AND message_id IN (SELECT id FROM messages WHERE workspace_name = %s AND session_name = %s)",
+                (WORKSPACE, WORKSPACE, session_name),
+            )
+            cur.execute(
+                "DELETE FROM documents WHERE workspace_name = %s AND session_name = %s",
+                (WORKSPACE, session_name),
+            )
+            cur.execute(
+                "DELETE FROM message_embeddings WHERE workspace_name = %s AND session_name = %s",
+                (WORKSPACE, session_name),
+            )
+            cur.execute(
+                "DELETE FROM messages WHERE workspace_name = %s AND session_name = %s",
+                (WORKSPACE, session_name),
+            )
+            cur.execute(
+                "DELETE FROM session_peers WHERE workspace_name = %s AND session_name = %s",
+                (WORKSPACE, session_name),
+            )
+            cur.execute(
+                "DELETE FROM sessions WHERE workspace_name = %s AND name = %s",
+                (WORKSPACE, session_name),
+            )
+
+        conn.commit()
+        deleted["sessions"] = len(session_names)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    return {"success": True, "deleted": deleted, "session_count": session_count}
+
 
 
 @router.get("/search")
