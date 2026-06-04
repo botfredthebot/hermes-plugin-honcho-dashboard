@@ -1254,18 +1254,19 @@ async def import_sessions(body: dict):
             continue
 
         # Get or create Honcho session
-        # Use Hermes session title + "-import" as Honcho session name
+        # Use Hermes session ID as Honcho session ID (already matches ^[a-zA-Z0-9_-]+$)
+        # Store the human-readable title in metadata for display
         hermes_sessions = _read_hermes_sessions()
         session_title = next(
             (s["title"] for s in hermes_sessions if s["id"] == sid), sid
         )
-        honcho_session_name = f"{session_title}-import" if session_title else f"{sid}-import"
+        honcho_session_name = f"{sid}-import"
 
         try:
             # Create/get the session in Honcho
             honcho_post(
                 f"/v3/workspaces/{WORKSPACE}/sessions",
-                {"id": honcho_session_name, "metadata": {"source": "hermes-import", "hermes_session_id": sid}},
+                {"id": honcho_session_name, "metadata": {"source": "hermes-import", "hermes_session_id": sid, "hermes_title": session_title}},
             )
 
             # Add messages in batches of 50

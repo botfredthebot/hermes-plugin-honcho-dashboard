@@ -307,20 +307,7 @@ class TestDeletePeer:
 
     def test_preview_returns_will_delete_without_confirm(self):
         """Without ?confirm=true, endpoint returns preview data (not deleted)."""
-        # First find the peer ID
-        conn = _db()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id FROM peers WHERE workspace_name = %s AND name = %s",
-            (WORKSPACE, self.PEER_NAME),
-        )
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        assert row, "Test peer not found"
-
-        peer_id = row[0]
-        resp = client.delete(f"{API_PREFIX}/peer/{peer_id}")
+        resp = client.delete(f"{API_PREFIX}/peer/{self.PEER_NAME}")
         assert resp.status_code == 200
         data = resp.json()
 
@@ -344,18 +331,7 @@ class TestDeletePeer:
 
     def test_confirm_deletes_peer_and_all_data(self):
         """With ?confirm=true, the peer and all its data are deleted."""
-        conn = _db()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id FROM peers WHERE workspace_name = %s AND name = %s",
-            (WORKSPACE, self.PEER_NAME),
-        )
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        peer_id = row[0]
-
-        resp = client.delete(f"{API_PREFIX}/peer/{peer_id}?confirm=true")
+        resp = client.delete(f"{API_PREFIX}/peer/{self.PEER_NAME}?confirm=true")
         assert resp.status_code == 200
         data = resp.json()
 
@@ -399,18 +375,7 @@ class TestDeletePeer:
         Verify that deleting a peer properly cascades:
         queue → documents → collections → message_embeddings → messages → session_peers → peers
         """
-        conn = _db()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id FROM peers WHERE workspace_name = %s AND name = %s",
-            (WORKSPACE, self.PEER_NAME),
-        )
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        peer_id = row[0]
-
-        resp = client.delete(f"{API_PREFIX}/peer/{peer_id}?confirm=true")
+        resp = client.delete(f"{API_PREFIX}/peer/{self.PEER_NAME}?confirm=true")
         assert resp.status_code == 200
         data = resp.json()
 

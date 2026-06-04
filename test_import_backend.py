@@ -415,8 +415,8 @@ class TestImportSessions:
             assert data["summary"]["skipped"] == 1
             assert data["summary"]["errors"] == 0
 
-    def test_import_uses_title_for_session_name(self, hermes_db):
-        """Honcho session name should be 'Title-import'."""
+    def test_import_uses_id_for_session_name(self, hermes_db):
+        """Honcho session name should be '{hermes_session_id}-import' (ID is Honcho-safe)."""
         with patch("dashboard.plugin_api.honcho_post") as mock_post:
             mock_post.return_value = {"id": "test"}
             resp = client.post(f"{API_PREFIX}/import-sessions",
@@ -430,7 +430,9 @@ class TestImportSessions:
             # First call is session creation
             session_call = mock_post.call_args_list[0]
             body = session_call[0][1] if len(session_call[0]) > 1 else session_call[1].get("body", {})
-            assert body["id"] == "Test Session One-import"
+            assert body["id"] == "test-session-1-import"
+            # Title should be in metadata
+            assert body["metadata"]["hermes_title"] == "Test Session One"
 
     def test_import_uses_id_when_no_title(self, hermes_db):
         """If session has no title, use session ID for Honcho session name."""
