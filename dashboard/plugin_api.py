@@ -960,9 +960,272 @@ async def create_insight(peerId: str, body: dict):
     return {"success": True, "message": msg_result, "session_id": session_id}
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------#
+# Dreams — status, history, schedule, config
+# ---------------------------------------------------------------------------#
+
+
+@router.get("/dreams/config")
+async def dreams_config():
+    """Return dream configuration settings (read-only)."""
+    import subprocess, json
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "honcho-api-1", "python3", "-c",
+             "import json,sys; from src.config import settings; "
+             "print(json.dumps({'ENABLED': settings.DREAM.ENABLED, "
+             "'DOCUMENT_THRESHOLD': settings.DREAM.DOCUMENT_THRESHOLD, "
+             "'IDLE_TIMEOUT_MINUTES': settings.DREAM.IDLE_TIMEOUT_MINUTES, "
+             "'MIN_HOURS_BETWEEN_DREAMS': settings.DREAM.MIN_HOURS_BETWEEN_DREAMS, "
+             "'ENABLED_TYPES': settings.DREAM.ENABLED_TYPES}))"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=502, detail=f"Failed to read dream config: {result.stderr[:500]}")
+        config = json.loads(result.stdout.strip())
+        return config
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Invalid config output from container")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dream config error: {str(e)}")
+
+
+@router.get("/dreams/status")
+async def dreams_status():
+    """
+    Return dream queue status + per-pair dream health.
+    """
+    import psycopg2
+
+    # --- Queue status ---
+    try:
+        req = urllib.request.Request(
+            f"{HONCHO_BASE}/v3/workspaces/{WORKSPACE}/queue/status",
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            queue = json.loads(resp.read())
+    except Exception:
+        queue = {}
+
+    # Get raw dream queue items from DB
+    dream_queue_items = []
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, session_id, work_unit_key, payload, processed, error, created_at "
+            "FROM queue "
+            "WHERE workspace_name = %s AND task_type = 'dream' "
+            "ORDER BY created_at DESC LIMIT 50",
+            (WORKSPACE,)
+        )
+        for row in cur.fetchall():
+            payload = row[3] or {}
+            dream_queue_items.append({
+                "id": row[0],
+                "session_id": row[1],
+                "work_unit_key": row[2],
+                "processed": row[4],
+                "error": row[5],
+                "created_at": row[6].isoformat() if row[6] else None,
+                "observer": payload.get("observer", ""),
+                "observed": payload.get("observed", ""),
+                "dream_type": payload.get("dream_type", "omni"),
+                "trigger_reason": payload.get("trigger_reason"),
+                "delay_reason": payload.get("delay_reason"),
+                "documents_since_last_dream": payload.get("documents_since_last_dream_at_schedule"),
+                "document_threshold": payload.get("document_threshold"),
+            })
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"[Dreams] Queue query error: {e}")
+
+    # --- Per-pair dream health ---
+    pair_health = []
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT observer, observed, internal_metadata "
+            "FROM collections "
+            "WHERE workspace_name = %s",
+            (WORKSPACE,)
+        )
+        for row in cur.fetchall():
+            observer, observed, internal_meta = row
+            dream_meta = (internal_meta or {}).get("dream", {})
+            last_dream_at = dream_meta.get("last_dream_at")
+            last_dream_doc_count = dream_meta.get("last_dream_document_count", 0)
+
+            cur2 = conn.cursor()
+            cur2.execute(
+                "SELECT COUNT(*) FROM documents "
+                "WHERE workspace_name = %s AND observer = %s AND observed = %s "
+                "AND level = 'explicit' AND deleted_at IS NULL",
+                (WORKSPACE, observer, observed)
+            )
+            current_count = cur2.fetchone()[0]
+            cur2.close()
+
+            docs_since = current_count - last_dream_doc_count
+
+            has_pending = any(
+                item["observer"] == observer and item["observed"] == observed and not item["processed"]
+                for item in dream_queue_items
+            )
+
+            pair_health.append({
+                "observer": observer,
+                "observed": observed,
+                "last_dream_at": last_dream_at,
+                "last_dream_document_count": last_dream_doc_count,
+                "current_document_count": current_count,
+                "documents_since_last_dream": docs_since,
+                "has_pending_dream": has_pending,
+            })
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"[Dreams] Pair health query error: {e}")
+
+    pair_health.sort(key=lambda p: (
+        -p["documents_since_last_dream"] if p["documents_since_last_dream"] > 0 else 999999,
+        p["last_dream_at"] or "9999-12-31"
+    ))
+
+    return {
+        "queue": {
+            "total": queue.get("total_work_units", 0),
+            "completed": queue.get("completed_work_units", 0),
+            "pending": queue.get("pending_work_units", 0),
+            "in_progress": queue.get("in_progress_work_units", 0),
+            "active": queue.get("pending_work_units", 0) + queue.get("in_progress_work_units", 0),
+        },
+        "dream_queue_items": dream_queue_items[:20],
+        "pair_health": pair_health,
+    }
+
+
+@router.get("/dreams/history")
+async def dreams_history(limit: int = Query(20, le=100), offset: int = Query(0, ge=0)):
+    """Return dream history — recent completed dream tasks with outcomes."""
+    import psycopg2
+
+    history = []
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, session_id, work_unit_key, payload, error, created_at "
+            "FROM queue "
+            "WHERE workspace_name = %s AND task_type = 'dream' AND processed = true "
+            "ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (WORKSPACE, limit, offset)
+        )
+        for row in cur.fetchall():
+            payload = row[3] or {}
+            observer = payload.get("observer", "")
+            observed = payload.get("observed", "")
+
+            conclusions_count = 0
+            conclusions_sample = []
+            if observer and observed:
+                cur2 = conn.cursor()
+                cur2.execute(
+                    "SELECT COUNT(*) FROM documents "
+                    "WHERE workspace_name = %s AND observer = %s AND observed = %s "
+                    "AND level IN ('deductive', 'inductive', 'contradiction') "
+                    "AND deleted_at IS NULL",
+                    (WORKSPACE, observer, observed)
+                )
+                conclusions_count = cur2.fetchone()[0]
+
+                cur2.execute(
+                    "SELECT content, level, created_at FROM documents "
+                    "WHERE workspace_name = %s AND observer = %s AND observed = %s "
+                    "AND level IN ('deductive', 'inductive', 'contradiction') "
+                    "AND deleted_at IS NULL "
+                    "ORDER BY created_at DESC LIMIT 5",
+                    (WORKSPACE, observer, observed)
+                )
+                for c_row in cur2.fetchall():
+                    conclusions_sample.append({
+                        "content": c_row[0][:200] if c_row[0] else "",
+                        "level": c_row[1],
+                        "created_at": c_row[2].isoformat() if c_row[2] else None,
+                    })
+                cur2.close()
+
+            history.append({
+                "id": row[0],
+                "session_id": row[1],
+                "observer": observer,
+                "observed": observed,
+                "dream_type": payload.get("dream_type", "omni"),
+                "trigger_reason": payload.get("trigger_reason"),
+                "delay_reason": payload.get("delay_reason"),
+                "documents_since_last_dream": payload.get("documents_since_last_dream_at_schedule"),
+                "document_threshold": payload.get("document_threshold"),
+                "error": row[4],
+                "completed_at": row[5].isoformat() if row[5] else None,
+                "conclusions_count": conclusions_count,
+                "conclusions_sample": conclusions_sample,
+            })
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"[Dreams] History query error: {e}")
+
+    return {"items": history, "limit": limit, "offset": offset}
+
+
+@router.post("/dreams/schedule")
+async def dreams_schedule(body: dict):
+    """
+    Manually schedule a dream task for a specific peer pair.
+    Body: { observer: str, observed?: str, session_id?: str }
+    """
+    observer = (body.get("observer") or "").strip()
+    if not observer:
+        raise HTTPException(status_code=400, detail="observer is required")
+
+    observed = (body.get("observed") or observer).strip()
+    session_id = body.get("session_id")
+
+    try:
+        schedule_body = {
+            "observer": observer,
+            "observed": observed,
+            "dream_type": "omni",
+        }
+        if session_id:
+            schedule_body["session_id"] = session_id
+
+        data = json.dumps(schedule_body).encode()
+        req = urllib.request.Request(
+            f"{HONCHO_BASE}/v3/workspaces/{WORKSPACE}/schedule_dream",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            pass  # 204 No Content
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()[:500]
+        raise HTTPException(status_code=e.code, detail=error_body)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to schedule dream: {str(e)}")
+
+    return {"success": True, "message": f"Dream scheduled for {observer} → {observed}"}
+
+
+# ---------------------------------------------------------------------------#
 # Peer deletion — cascading clean-up in PostgreSQL
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------#
 
 import os as _os
 

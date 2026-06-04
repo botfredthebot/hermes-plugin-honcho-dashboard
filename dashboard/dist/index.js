@@ -977,6 +977,277 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Dreams Tab — dream queue, per-pair health, history, manual trigger
+  // ---------------------------------------------------------------------------
+
+  function DreamsTab() {
+    var _u = useState(null), data = _u[0], setData = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
+    var _u4 = useState(null), config = _u4[0], setConfig = _u4[1];
+    var _u5 = useState(false), scheduling = _u5[0], setScheduling = _u5[1];
+    var _u6 = useState(""), scheduleObserver = _u6[0], setScheduleObserver = _u6[1];
+    var _u7 = useState(""), scheduleObserved = _u7[0], setScheduleObserved = _u7[1];
+    var _u8 = useState(null), history = _u8[0], setHistory = _u8[1];
+    var _u9 = useState(false), loadingHistory = _u9[0], setLoadingHistory = _u9[1];
+
+    useEffect(function () {
+      setLoading(true);
+      setLoadingHistory(true);
+      Promise.all([
+        fetchJSON(API + "/dreams/status"),
+        fetchJSON(API + "/dreams/config"),
+        fetchJSON(API + "/dreams/history?limit=20"),
+      ]).then(function (results) {
+        setData(results[0]);
+        setConfig(results[1]);
+        setHistory(results[2]);
+        setError(null);
+      }).catch(function (e) {
+        setError(e.message);
+      }).finally(function () {
+        setLoading(false);
+        setLoadingHistory(false);
+      });
+    }, []);
+
+    // If dreams are disabled, show disabled message
+    if (config && config.ENABLED === false) {
+      return h("div", null,
+        h("h2", { style: { marginBottom: 16 } }, "Dreams"),
+        h("div", { style: {
+          padding: "24px",
+          background: "#1c1f26",
+          borderRadius: 8,
+          border: "1px solid #30363d",
+          textAlign: "center",
+          color: "#8b949e",
+        }},
+          h("div", { style: { fontSize: "2rem", marginBottom: 12 } }, "💤"),
+          h("div", { style: { fontSize: "1rem", fontWeight: 600, marginBottom: 8 } }, "Dreams are disabled"),
+          h("div", { style: { fontSize: "0.85rem" } },
+            "Enable dreams in the Honcho configuration to allow memory consolidation."),
+          h("div", { style: { fontSize: "0.8rem", marginTop: 8 } },
+            "Config location: settings.DREAM.ENABLED or DREAM_ENABLED env var"),
+        )
+      );
+    }
+
+    var queue = (data && data.queue) || {};
+    var dreamItems = (data && data.dream_queue_items) || [];
+    var pairHealth = (data && data.pair_health) || [];
+    var historyItems = (history && history.items) || [];
+
+    // Separate pending and in-progress
+    var activeDreams = dreamItems.filter(function (d) { return !d.processed; });
+    var completedRecent = dreamItems.filter(function (d) { return d.processed; }).slice(0, 5);
+
+    return h("div", null,
+      h("h2", { style: { marginBottom: 16 } }, "Dreams"),
+
+      // --- Disabled banner (config read-only) ---
+      h("div", { style: {
+        padding: "10px 14px",
+        background: "#1c1f26",
+        borderRadius: 6,
+        border: "1px solid #30363d",
+        marginBottom: 16,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: 8,
+      }},
+        h("span", { style: { fontSize: "0.8rem", color: "#8b949e" } },
+          "Threshold: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.DOCUMENT_THRESHOLD) || "?"),
+          " docs · Min interval: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.MIN_HOURS_BETWEEN_DREAMS) || "?", "h"),
+          " · Idle timeout: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.IDLE_TIMEOUT_MINUTES) || "?", "m"),
+          " · Types: ", h("strong", { style: { color: "#e6edf3" } }, ((config && config.ENABLED_TYPES) || []).join(", ")),
+        ),
+        h("span", { style: { fontSize: "0.7rem", color: "#6e7681" } }, "Read-only — edit in Config tab"),
+      ),
+
+      h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }},
+        h("div", { style: S.statCard },
+          h("div", { style: Object.assign({}, S.statNumber, (queue.active || 0) > 0 ? { color: "#d29922" } : S.ok) }, String(queue.active || 0)),
+          h("div", { style: S.statLabel }, "Active Dream Tasks"),
+        ),
+        h("div", { style: S.statCard },
+          h("div", { style: Object.assign({}, S.statNumber, S.ok) }, String(queue.completed || 0)),
+          h("div", { style: S.statLabel }, "Completed"),
+        ),
+      ),
+
+      // --- Active Queue ---
+      h("h3", { style: { marginBottom: 12, fontSize: "1rem" } }, "Queue"),
+      h("div", { style: { marginBottom: 24 } },
+        activeDreams.length === 0
+          ? h("p", { style: { color: "#6e7681", fontSize: "0.85rem" } }, "No pending dream tasks.")
+          : h("table", { style: { width: "100%", fontSize: "0.8rem", borderCollapse: "collapse" } },
+            h("thead", null,
+              h("tr", { style: { borderBottom: "1px solid #30363d" } },
+                h("th", { style: T.th }, "Peer Pair"),
+                h("th", { style: T.th }, "Type"),
+                h("th", { style: T.th }, "Trigger"),
+                h("th", { style: T.th }, "Docs"),
+                h("th", { style: T.th }, "Queued"),
+              )
+            ),
+            h("tbody", null,
+              activeDreams.map(function (d, i) {
+                var pairLabel = d.observer ? (d.observer + (d.observed && d.observed !== d.observer ? " → " + d.observed : "")) : "unknown";
+                return h("tr", { key: d.id || i, style: { borderBottom: "1px solid #21262d" } },
+                  h("td", { style: T.td }, h("span", { style: { color: "#e6edf3" } }, pairLabel)),
+                  h("td", { style: T.td }, h("span", { style: { color: "#8b949e" } }, d.dream_type || "omni")),
+                  h("td", { style: T.td }, h("span", { style: { color: d.trigger_reason === "manual" ? "#d29922" : "#8b949e" } }, d.trigger_reason || "-")),
+                  h("td", { style: T.td },
+                    d.documents_since_last_dream != null && d.document_threshold
+                      ? h("span", null, d.documents_since_last_dream, "/", d.document_threshold)
+                      : h("span", { style: { color: "#6e7681" } }, "-")
+                  ),
+                  h("td", { style: T.td }, h("span", { style: { color: "#6e7681" } }, d.created_at ? new Date(d.created_at).toLocaleString("en-GB") : "-")),
+                );
+              })
+            )
+          )
+      ),
+
+      // --- Per-Pair Dream Health ---
+      h("h3", { style: { marginBottom: 12, fontSize: "1rem" } }, "Dream Health by Pair"),
+      h("div", { style: { marginBottom: 24 } },
+        loading
+          ? h("p", { style: { color: "#6e7681", fontSize: "0.85rem" } }, "Loading...")
+          : pairHealth.length === 0
+            ? h("p", { style: { color: "#6e7681", fontSize: "0.85rem" } }, "No peer pairs found.")
+            : h("table", { style: { width: "100%", fontSize: "0.8rem", borderCollapse: "collapse" } },
+              h("thead", null,
+                h("tr", { style: { borderBottom: "1px solid #30363d" } },
+                  h("th", { style: T.th }, "Peer Pair"),
+                  h("th", { style: T.th }, "Last Dream"),
+                  h("th", { style: T.th }, "Docs Since"),
+                  h("th", { style: T.th }, "Progress"),
+                  h("th", { style: T.th }, "Pending"),
+                  h("th", { style: T.th }, "Action"),
+                )
+              ),
+              h("tbody", null,
+                pairHealth.map(function (p, i) {
+                  var threshold = (config && config.DOCUMENT_THRESHOLD) || 50;
+                  var pct = Math.min(100, Math.round((p.documents_since_last_dream / threshold) * 100));
+                  var barColor = pct >= 100 ? "#238636" : pct >= 70 ? "#d29922" : "#30363d";
+                  var pairLabel = p.observer + (p.observed !== p.observer ? " → " + p.observed : "");
+                  var lastDreamStr = p.last_dream_at
+                    ? new Date(p.last_dream_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                    : "Never";
+                  return h("tr", { key: i, style: { borderBottom: "1px solid #21262d" } },
+                    h("td", { style: T.td, style: Object.assign({}, T.td, { fontWeight: 600, color: "#e6edf3" }) }, pairLabel),
+                    h("td", { style: T.td }, h("span", { style: { color: "#8b949e" } }, lastDreamStr)),
+                    h("td", { style: T.td },
+                      h("span", { style: { color: p.documents_since_last_dream > 0 ? "#e6edf3" : "#6e7681" } },
+                        p.documents_since_last_dream || 0)
+                    ),
+                    h("td", { style: T.td },
+                      h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+                        h("div", { style: { width: 60, height: 6, background: "#21262d", borderRadius: 3, overflow: "hidden" } },
+                          h("div", { style: { width: pct + "%", height: "100%", background: barColor, borderRadius: 3 } })
+                        ),
+                        h("span", { style: { color: "#6e7681", fontSize: "0.7rem" } }, pct, "%")
+                      )
+                    ),
+                    h("td", { style: T.td },
+                      p.has_pending_dream
+                        ? h("span", { style: { color: "#d29922", fontSize: "0.75rem" } }, "⏳ queued")
+                        : h("span", { style: { color: "#6e7681" } }, "—")
+                    ),
+                    h("td", { style: T.td },
+                      h("button", {
+                        disabled: scheduling || p.has_pending_dream,
+                        onClick: function () {
+                          if (!window.confirm("Schedule dream for " + pairLabel + "?\n\nThis will trigger a memory consolidation cycle for this peer pair.")) return;
+                          setScheduling(true);
+                          fetch(API + "/dreams/schedule", {
+                            method: "POST",
+                            headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+                            body: JSON.stringify({ observer: p.observer, observed: p.observed }),
+                          }).then(function (r) { return r.json(); })
+                            .then(function (d) {
+                              alert("✓ " + (d.message || "Dream scheduled"));
+                              // Refresh status
+                              fetchJSON(API + "/dreams/status").then(setData).catch(function () {});
+                            })
+                            .catch(function (e) { alert("Error: " + e.message); })
+                            .finally(function () { setScheduling(false); });
+                        },
+                        style: {
+                          padding: "3px 8px",
+                          fontSize: "0.7rem",
+                          background: p.has_pending_dream ? "#30363d" : "#238636",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 4,
+                          cursor: p.has_pending_dream || scheduling ? "not-allowed" : "pointer",
+                          opacity: p.has_pending_dream ? 0.5 : 1,
+                        }
+                      }, scheduling ? "⏳" : "💤")
+                    ),
+                  );
+                })
+              )
+            )
+      ),
+
+      // --- Dream History ---
+      h("h3", { style: { marginBottom: 12, fontSize: "1rem" } }, "Dream History"),
+      h("div", null,
+        loadingHistory
+          ? h("p", { style: { color: "#6e7681", fontSize: "0.85rem" } }, "Loading...")
+          : historyItems.length === 0
+            ? h("p", { style: { color: "#6e7681", fontSize: "0.85rem" } }, "No dream history yet.")
+            : historyItems.map(function (h_item, i) {
+              var pairLabel = h_item.observer + (h_item.observed !== h_item.observer ? " → " + h_item.observed : "");
+              var completedStr = h_item.completed_at ? new Date(h_item.completed_at).toLocaleString("en-GB") : "unknown";
+              return h("div", { key: h_item.id || i, style: {
+                padding: "10px 12px",
+                background: "#0d1117",
+                borderRadius: 6,
+                border: "1px solid #30363d",
+                marginBottom: 8,
+              }},
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
+                  h("span", { style: { fontWeight: 600, fontSize: "0.8rem", color: "#e6edf3" } }, pairLabel),
+                  h("span", { style: { fontSize: "0.7rem", color: "#6e7681" } }, completedStr),
+                ),
+                h("div", { style: { display: "flex", gap: 12, fontSize: "0.75rem", color: "#8b949e" } },
+                  h("span", null, "Type: ", h("strong", null, h_item.dream_type || "omni")),
+                  h("span", null, "Trigger: ", h("strong", null, h_item.trigger_reason || "-")),
+                  h("span", null, "Conclusions: ", h("strong", { style: { color: h_item.conclusions_count > 0 ? "#3fb950" : "#6e7681" } }, h_item.conclusions_count || 0)),
+                  h_item.error ? h("span", { style: { color: "#f85149" } }, "Error: " + h_item.error) : null,
+                ),
+                h_item.conclusions_sample && h_item.conclusions_sample.length > 0
+                  ? h("div", { style: { marginTop: 6, paddingTop: 6, borderTop: "1px solid #21262d" } },
+                      h("div", { style: { fontSize: "0.7rem", color: "#6e7681", marginBottom: 4 } }, "Sample conclusions:"),
+                      h_item.conclusions_sample.slice(0, 3).map(function (c, ci) {
+                        return h("div", { key: ci, style: {
+                          fontSize: "0.7rem",
+                          color: "#8b949e",
+                          padding: "2px 0",
+                          borderLeft: "2px solid " + (c.level === "deductive" ? "#58a6ff" : c.level === "inductive" ? "#3fb950" : "#d29922"),
+                          paddingLeft: 6,
+                          marginBottom: 2,
+                        } },
+                          h("span", { style: { color: "#6e7681" } }, "[", c.level, "] "),
+                          c.content
+                        );
+                      })
+                    )
+                  : null
+              );
+            })
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Status Tab — includes DB status badge
   // ---------------------------------------------------------------------------
 
@@ -1772,6 +2043,7 @@
       { key: "search", label: "Search" },
       { key: "analytics", label: "Analytics" },
       { key: "status", label: "Status" },
+      { key: "dreams", label: "Dreams" },
       { key: "config", label: "Config" },
       { key: "import", label: "Import" },
     ];
@@ -1784,6 +2056,7 @@
     else if (tab === "search") content = h(SearchTab);
     else if (tab === "analytics") content = h(AnalyticsTab);
     else if (tab === "status") content = h(StatusTab);
+    else if (tab === "dreams") content = h(DreamsTab);
     else if (tab === "config") content = h(ConfigTab);
     else if (tab === "import") content = h(ImportTab);
 

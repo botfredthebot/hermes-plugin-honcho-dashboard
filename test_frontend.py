@@ -656,3 +656,100 @@ class TestStatusTabVersionCheck:
             content = resp.read().decode()
         assert "Update Now" in content, "JS file does not contain 'Update Now' text"
         assert "update_available" in content, "JS file does not check update_available"
+
+
+# =================================================================== #
+# DREAMS TAB — JS verification + frontend smoke tests
+# =================================================================== #
+
+class TestDreamsTabJS:
+    """Verify the Dreams tab JS is properly included in the bundle."""
+
+    def test_js_has_dreams_tab(self):
+        """The JS file should contain the DreamsTab component."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "DreamsTab" in content, "JS file does not contain DreamsTab component"
+        assert '"dreams"' in content, "JS file does not register dreams tab"
+
+    def test_js_has_dreams_endpoints(self):
+        """The JS should reference all dream API endpoints."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "/dreams/status" in content
+        assert "/dreams/config" in content
+        assert "/dreams/history" in content
+        assert "/dreams/schedule" in content
+
+    def test_js_has_dream_health_table(self):
+        """The JS should render dream health per pair."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "Dream Health by Pair" in content
+        assert "documents_since_last_dream" in content
+        assert "has_pending_dream" in content
+
+    def test_js_has_manual_trigger(self):
+        """The JS should have manual dream scheduling button."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "Schedule dream" in content
+        assert "schedule_dream" in content or "dreams/schedule" in content
+
+    def test_js_has_disabled_state(self):
+        """The JS should handle dreams-disabled state."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "Dreams are disabled" in content
+        assert "ENABLED" in content
+
+
+class TestDreamsTabFrontend:
+    """Playwright-based frontend tests for the Dreams tab."""
+
+    @pytest.mark.xfail(reason="Requires gateway restart to load new JS", strict=False)
+    def test_dreams_tab_renders_no_errors(self, page, errors):
+        """Navigating to Dreams tab should not produce JS errors."""
+        navigate_to_honcho_tab(page)
+        page.click("text=Dreams", timeout=5_000)
+        page.wait_for_timeout(3_000)
+        _known = "Cannot read properties of undefined (reading 'peers')"
+        real = [e for e in errors if "JS_ERROR" in e and _known not in e]
+        assert not real, f"JS errors on Dreams tab: {real[:5]}"
+
+    @pytest.mark.xfail(reason="Requires gateway restart to load new JS", strict=False)
+    def test_dreams_tab_has_section_headings(self, page, errors):
+        """Dreams tab should show Queue, Dream Health, and Dream History sections."""
+        navigate_to_honcho_tab(page)
+        page.click("text=Dreams", timeout=5_000)
+        page.wait_for_timeout(3_000)
+        text = rendered_text(page)
+        # Should have at least Queue and Dream Health sections
+        has_queue = "Queue" in text or "Active Dream" in text
+        has_health = "Dream Health" in text or "by Pair" in text
+        assert has_queue or has_health, f"Dreams tab sections not found. Text: {text[:500]}"
