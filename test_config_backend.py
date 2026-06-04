@@ -269,3 +269,47 @@ class TestConfigIntegration:
         body = {"configuration": {"summary.messages_per_short_summary": 42}}
         put_resp = client.put(f"{API_PREFIX}/config", json=body, headers=auth_headers())
         assert put_resp.status_code == 200
+
+
+class TestPutGlobalConfigNested:
+    """Tests for PUT /global-config with nested TOML fields (e.g. dream.SURPRISAL.ENABLED)."""
+
+    @patch("subprocess.run")
+    def test_put_global_config_nested_field(self, mock_run):
+        """Updating a nested field like dream.SURPRISAL.ENABLED should write to [dream.SURPRISAL] section."""
+        toml_content = """[dream]
+ENABLED = true
+DOCUMENT_THRESHOLD = 50
+
+[dream.main_model_config]
+transport = "openai"
+model = "openai/gpt-oss-20b:free"
+"""
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout=toml_content, stderr=""),  # read
+            MagicMock(returncode=0, stdout="", stderr=""),  # write
+            MagicMock(returncode=0, stdout="", stderr=""),  # restart
+        ]
+        body = {"dream.SURPRISAL.ENABLED": True}
+        resp = client.put(f"{API_PREFIX}/global-config", json=body, headers=auth_headers())
+        assert resp.status_code == 200
+
+    @patch("subprocess.run")
+    def test_put_global_config_nested_field_existing_section(self, mock_run):
+        """Updating a field in an existing nested section should replace just that field."""
+        toml_content = """[dream]
+ENABLED = true
+
+[dream.SURPRISAL]
+ENABLED = false
+TREE_TYPE = "kdtree"
+TREE_K = 5
+"""
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout=toml_content, stderr=""),  # read
+            MagicMock(returncode=0, stdout="", stderr=""),  # write
+            MagicMock(returncode=0, stdout="", stderr=""),  # restart
+        ]
+        body = {"dream.SURPRISAL.TREE_K": 10}
+        resp = client.put(f"{API_PREFIX}/global-config", json=body, headers=auth_headers())
+        assert resp.status_code == 200

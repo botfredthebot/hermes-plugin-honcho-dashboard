@@ -1537,6 +1537,69 @@ async def get_global_config():
     return config
 
 
+def _update_toml_field(toml_content: str, section: str, field: str, toml_val: str) -> str:
+    """Update a simple top-level section.field in TOML content."""
+    import re
+    section_pattern = r'\[' + re.escape(section) + r'\]'
+    field_pattern = r'^(\s*' + re.escape(field) + r'\s*=\s*)[^\s#]+'
+
+    section_match = re.search(section_pattern, toml_content, re.MULTILINE)
+    if not section_match:
+        toml_content += f"\n[{section}]\n{field} = {toml_val}\n"
+    else:
+        section_start = section_match.end()
+        next_section = re.search(r'\n\[', toml_content[section_start:])
+        section_end = section_start + next_section.start() if next_section else len(toml_content)
+        section_text = toml_content[section_start:section_end]
+        field_re = re.compile(field_pattern, re.MULTILINE)
+        if field_re.search(section_text):
+            new_section_text = field_re.sub(r'\g<1>' + toml_val, section_text)
+            toml_content = toml_content[:section_start] + new_section_text + toml_content[section_end:]
+        else:
+            toml_content = toml_content[:section_end] + f"{field} = {toml_val}\n" + toml_content[section_end:]
+    return toml_content
+
+
+def _update_toml_nested_field(toml_content: str, section_parts: list, field: str, toml_val: str) -> str:
+    """Update a nested section.field in TOML content, e.g. section_parts=['dream','SURPRISAL'], field='ENABLED'."""
+    import re
+    # Build the nested section header, e.g. [dream.SURPRISAL]
+    nested_header = ".".join(section_parts)
+    section_pattern = r'\[' + re.escape(nested_header) + r'\]'
+    field_pattern = r'^(\s*' + re.escape(field) + r'\s*=\s*)[^\s#]+'
+
+    section_match = re.search(section_pattern, toml_content, re.MULTILINE)
+    if not section_match:
+        # Nested section doesn't exist — add it at the end of the parent section
+        parent_section = section_parts[0]
+        parent_pattern = r'\[' + re.escape(parent_section) + r'\]'
+        parent_match = re.search(parent_pattern, toml_content, re.MULTILINE)
+        if parent_match:
+            # Find end of parent section
+            parent_start = parent_match.end()
+            next_section = re.search(r'\n\[', toml_content[parent_start:])
+            parent_end = parent_start + next_section.start() if next_section else len(toml_content)
+            # Insert nested section at end of parent
+            nested_block = f"\n[{nested_header}]\n{field} = {toml_val}\n"
+            toml_content = toml_content[:parent_end] + nested_block + toml_content[parent_end:]
+        else:
+            # Parent doesn't exist either — add everything at the end
+            toml_content += f"\n[{parent_section}]\n[{nested_header}]\n{field} = {toml_val}\n"
+    else:
+        # Nested section exists — find and update field within it
+        section_start = section_match.end()
+        next_section = re.search(r'\n\[', toml_content[section_start:])
+        section_end = section_start + next_section.start() if next_section else len(toml_content)
+        section_text = toml_content[section_start:section_end]
+        field_re = re.compile(field_pattern, re.MULTILINE)
+        if field_re.search(section_text):
+            new_section_text = field_re.sub(r'\g<1>' + toml_val, section_text)
+            toml_content = toml_content[:section_start] + new_section_text + toml_content[section_end:]
+        else:
+            toml_content = toml_content[:section_end] + f"{field} = {toml_val}\n" + toml_content[section_end:]
+    return toml_content
+
+
 @router.put("/global-config")
 async def update_global_config(body: dict):
     """
@@ -1554,13 +1617,13 @@ async def update_global_config(body: dict):
         raise HTTPException(status_code=502, detail=f"Failed to read config.toml: {result.stderr[:500]}")
     toml_content = result.stdout
 
-    # Apply updates — body is a flat dict like {"deriver.ENABLED": true, "summary.MESSAGES_PER_SHORT_SUMMARY": 60}
+    # Apply updates — body is a flat dict like {"deriver.ENABLED": true, "dream.SURPRISAL.ENABLED": false}
+    # Keys can be 2-part (section.field) or 3+ part (section.subsection.field) for nested TOML tables.
     for key, value in body.items():
         parts = key.split(".")
         if len(parts) < 2:
             continue
-        section = parts[0]
-        field = parts[1]
+
         # Convert value to TOML representation
         if isinstance(value, bool):
             toml_val = "true" if value else "false"
@@ -1568,34 +1631,25 @@ async def update_global_config(body: dict):
             toml_val = str(value)
         elif isinstance(value, str):
             toml_val = '"' + value.replace('"', '\\"') + '"'
+        elif isinstance(value, list):
+            # Handle list values like ["explicit", "deductive"]
+            items = ", ".join('"' + str(v).replace('"', '\\"') + '"' for v in value)
+            toml_val = f"[{items}]"
         else:
             toml_val = str(value)
 
-        # Try to find and replace the line in the appropriate section
-        section_pattern = r'\[' + re.escape(section) + r'\]'
-        field_pattern = r'^(\s*' + re.escape(field) + r'\s*=\s*)[^\s#]+'
-
-        # Find the section
-        section_match = re.search(section_pattern, toml_content, re.MULTILINE)
-        if not section_match:
-            # Section doesn't exist, add it at the end
-            toml_content += f"\n[{section}]\n{field} = {toml_val}\n"
+        if len(parts) == 2:
+            # Simple case: section.field
+            section = parts[0]
+            field = parts[1]
+            toml_content = _update_toml_field(toml_content, section, field, toml_val)
         else:
-            # Find the field within the section
-            section_start = section_match.end()
-            # Find the next section header or end of file
-            next_section = re.search(r'\n\[', toml_content[section_start:])
-            section_end = section_start + next_section.start() if next_section else len(toml_content)
-            section_text = toml_content[section_start:section_end]
-
-            field_re = re.compile(field_pattern, re.MULTILINE)
-            if field_re.search(section_text):
-                # Replace existing value
-                new_section_text = field_re.sub(r'\g<1>' + toml_val, section_text)
-                toml_content = toml_content[:section_start] + new_section_text + toml_content[section_end:]
-            else:
-                # Field doesn't exist in section, add it
-                toml_content = toml_content[:section_end] + f"{field} = {toml_val}\n" + toml_content[section_end:]
+            # Nested case: section.subsection.field (e.g. dream.SURPRISAL.ENABLED)
+            # Build the TOML section path: [section.subsection]
+            section_parts = parts[:-1]  # e.g. ["dream", "SURPRISAL"]
+            field = parts[-1]           # e.g. "ENABLED"
+            section_path = ".".join(section_parts)
+            toml_content = _update_toml_nested_field(toml_content, section_parts, field, toml_val)
 
     # Write updated TOML back (use root to bypass permission issues)
     import base64
