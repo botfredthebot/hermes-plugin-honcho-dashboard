@@ -86,6 +86,11 @@ def mock_honcho_post(path, body=None):
             "in_progress_work_units": 1,
             "sessions": {"sess-1": {"total": 5, "completed": 4, "pending": 1}},
         }
+    if "/peers/" in path and "/card" in path:
+        peerId = path.split("/peers/")[1].split("/card")[0]
+        if peerId == "peer-1":
+            return {"peer_card": {"name": "Alice", "summary": "A test peer", "observations": ["Obs 1", "Obs 2"]}}
+        return {"peer_card": None}
     if "/sessions/sess-1/messages" in path and body:
         return {"id": "new-msg", "content": "insight"}
     return {}
@@ -587,3 +592,47 @@ class TestInsight:
         )
         data = resp.json()
         assert "session_id" in data
+
+
+# =================================================================== #
+# GET /peer/{peerId}/card
+# =================================================================== #
+
+class TestPeerCard:
+    """Tests for GET /api/plugins/honcho-dashboard/peer/{peerId}/card"""
+
+    @patch("dashboard.plugin_api.honcho_post")
+    def test_peer_card_returns_200(self, mock_post):
+        mock_post.side_effect = lambda path, body=None: mock_honcho_post(path, body)
+        resp = client.get(f"{API_PREFIX}/peer/peer-1/card")
+        assert resp.status_code == 200
+
+    @patch("dashboard.plugin_api.honcho_post")
+    def test_peer_card_returns_card_data(self, mock_post):
+        mock_post.side_effect = lambda path, body=None: mock_honcho_post(path, body)
+        resp = client.get(f"{API_PREFIX}/peer/peer-1/card")
+        data = resp.json()
+        assert "peer_card" in data
+
+    @patch("dashboard.plugin_api.honcho_post")
+    def test_peer_card_with_card(self, mock_post):
+        mock_post.side_effect = lambda path, body=None: mock_honcho_post(path, body)
+        resp = client.get(f"{API_PREFIX}/peer/peer-1/card")
+        data = resp.json()
+        assert data["peer_card"] is not None
+        assert "name" in data["peer_card"]
+
+    @patch("dashboard.plugin_api.honcho_post")
+    def test_peer_card_without_card(self, mock_post):
+        mock_post.side_effect = lambda path, body=None: mock_honcho_post(path, body)
+        resp = client.get(f"{API_PREFIX}/peer/peer-2/card")
+        data = resp.json()
+        assert data["peer_card"] is None
+
+    @patch("dashboard.plugin_api.honcho_post")
+    def test_peer_card_nonexistent_peer(self, mock_post):
+        mock_post.side_effect = lambda path, body=None: mock_honcho_post(path, body)
+        resp = client.get(f"{API_PREFIX}/peer/nonexistent/card")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["peer_card"] is None

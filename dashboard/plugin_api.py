@@ -255,6 +255,15 @@ async def list_peers():
     return {"peers": peer_items, "total": len(peer_items)}
 
 
+@router.get("/peer/{peerId}/card")
+async def get_peer_card(peerId: str):
+    """Get the peer card for a specific peer from Honcho."""
+    # Fetch the peer card from Honcho's dedicated endpoint
+    body = {"peer_id": peerId}
+    card = honcho_post(f"/v3/workspaces/{WORKSPACE}/peers/{peerId}/card", body)
+    return card
+
+
 @router.get("/sessions")
 async def list_sessions():
     """List all sessions with message counts."""

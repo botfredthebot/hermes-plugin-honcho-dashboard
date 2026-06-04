@@ -951,3 +951,18 @@ class TestJSVerification:
         non_zero = [r for r in radii if int(r) > 0]
         # Allow a few exceptions (toggle knob etc.)
         assert len(non_zero) <= 2, f"Too many non-zero border radii: {non_zero}"
+
+    def test_js_has_peer_card_endpoint(self):
+        """JS should reference the peer card endpoint."""
+        js = self._read_js()
+        assert "/peer/" in js and "/card" in js, "JS missing peer card endpoint"
+
+    def test_js_has_peer_card_loading_state(self):
+        """JS should have peer card loading state."""
+        js = self._read_js()
+        assert "cardLoading" in js or "Loading peer card" in js, "JS missing peer card loading state"
+
+    def test_js_has_selected_peer_state(self):
+        """JS should have selectedPeer state for peer card toggle."""
+        js = self._read_js()
+        assert "selectedPeer" in js, "JS missing selectedPeer state"
