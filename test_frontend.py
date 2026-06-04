@@ -596,3 +596,63 @@ class TestConclusionDeleteFunctional:
 
         pg.close()
         context.close()
+
+
+# =================================================================== #
+# STATUS TAB — Version Check & Update
+# =================================================================== #
+
+class TestStatusTabVersionCheck:
+    """Tests for the version check and update UI on the Status tab."""
+
+    def test_status_tab_shows_version(self, page, errors):
+        """Status tab should display the installed Honcho version."""
+        navigate_to_subtab(page, "Status")
+        page.wait_for_timeout(3_000)
+        text = rendered_text(page)
+        assert "Version:" in text, "Version label not found on Status tab"
+
+    def test_status_tab_shows_check_for_update_button(self, page, errors):
+        """Status tab should show 'Check for Update' button (not 'Update Now')."""
+        navigate_to_subtab(page, "Status")
+        page.wait_for_timeout(3_000)
+        text = rendered_text(page)
+        assert "Check for Update" in text, "'Check for Update' button not found"
+        # Should NOT show "Update Now" before checking
+        assert "Update Now" not in text, "'Update Now' should not appear before version check"
+
+    def test_check_for_update_button_clickable(self, page, errors):
+        """Clicking 'Check for Update' should trigger version check."""
+        navigate_to_subtab(page, "Status")
+        page.wait_for_timeout(3_000)
+        # Click the Check for Update button
+        page.click("button:has-text('Check for Update')", timeout=5_000)
+        page.wait_for_timeout(3_000)
+        text = rendered_text(page)
+        # After checking, should show either "Up to date" or "update available"
+        has_result = "Up to date" in text or "update available" in text.lower() or "Checking" in text
+        assert has_result, f"Version check result not shown. Page text: {text[:500]}"
+
+    def test_js_has_version_check_endpoint(self):
+        """The JS file should reference the version-check endpoint."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "version-check" in content, "JS file does not reference version-check endpoint"
+        assert "Check for Update" in content, "JS file does not contain 'Check for Update' text"
+
+    def test_js_has_update_now_flow(self):
+        """The JS file should have the dynamic Update Now button (shown after check)."""
+        import urllib.request
+        req = urllib.request.Request(
+            "http://127.0.0.1:9119/dashboard-plugins/honcho-dashboard/dist/index.js",
+            headers={"Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read().decode()
+        assert "Update Now" in content, "JS file does not contain 'Update Now' text"
+        assert "update_available" in content, "JS file does not check update_available"

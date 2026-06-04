@@ -985,6 +985,8 @@
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), error = _u3[0], setError = _u3[1];
     var _u4 = useState(false), updating = _u4[0], setUpdating = _u4[1];
+    var _u5 = useState(null), versionCheck = _u5[0], setVersionCheck = _u5[1];
+    var _u6 = useState(false), checking = _u6[0], setChecking = _u6[1];
 
     useEffect(function () {
       setLoading(true);
@@ -1011,34 +1013,74 @@
       h(DbStatusBadge),
 
       // Version + Update
-      h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
-        h("div", { style: { fontSize: "0.85rem", color: "#8b949e" } },
-          "Version: ", h("strong", { style: { color: "#e6edf3" } }, data.honcho_version || "unknown")
+      h("div", { style: { marginBottom: 16 } },
+        h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 8 } },
+          h("div", { style: { fontSize: "0.85rem", color: "#8b949e" } },
+            "Version: ", h("strong", { style: { color: "#e6edf3" } }, data.honcho_version || "unknown")
+          ),
+          versionCheck && versionCheck.update_available === true
+            ? h("span", { style: { fontSize: "0.75rem", color: "#d29922", background: "#3b2300", padding: "2px 8px", borderRadius: 4 } },
+                "⬆ " + (versionCheck.latest || "update available")
+              )
+            : null,
+          versionCheck && versionCheck.update_available === false
+            ? h("span", { style: { fontSize: "0.75rem", color: "#3fb950" } }, "✓ Up to date")
+            : null
         ),
-        h("button",
-          {
-            disabled: updating,
-            onClick: function () {
-              if (!window.confirm("Restart Honcho API container? It will be unavailable for a few seconds.")) return;
-              setUpdating(true);
-              fetch(API + "/update", { method: "POST", headers: authHeaders() })
-                .then(function (r) { return r.json(); })
-                .then(function (d) {
-                  if (d.success) {
-                    alert(d.message || "Update triggered.");
-                    // Reload status after a delay
-                    setTimeout(function () { setLoading(true); fetchJSON(API + "/status").then(function (d) { setData(d); setError(null); }).catch(function (e) { setError(e.message); }).finally(function () { setLoading(false); }); }, 3000);
-                  } else {
-                    alert("Error: " + (d.detail || "Unknown error"));
-                  }
-                })
-                .catch(function (e) { alert("Update failed: " + e.message); })
-                .finally(function () { setUpdating(false); });
-            },
-            style: { padding: "6px 14px", fontSize: "0.8rem", background: "#238636", color: "#fff", border: "none", borderRadius: 6, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }
-          },
-          updating ? "⏳ Restarting…" : "🔄 Update Now"
-        )
+        h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          versionCheck && versionCheck.update_available === true
+            ? h("button",
+                {
+                  disabled: updating,
+                  onClick: function () {
+                    if (!window.confirm("Update Honcho to v" + (versionCheck.latest || "latest") + "?\n\nThis will:\n1. Pull the latest Docker image\n2. Restart the Honcho API container\n\nIt will be unavailable for a few seconds.")) return;
+                    setUpdating(true);
+                    fetch(API + "/update", { method: "POST", headers: authHeaders() })
+                      .then(function (r) { return r.json(); })
+                      .then(function (d) {
+                        if (d.success) {
+                          alert(d.message || "Update triggered.");
+                          setVersionCheck(null);
+                          setTimeout(function () { setLoading(true); fetchJSON(API + "/status").then(function (d2) { setData(d2); setError(null); }).catch(function (e) { setError(e.message); }).finally(function () { setLoading(false); }); }, 5000);
+                        } else {
+                          alert("Error: " + (d.detail || "Unknown error"));
+                        }
+                      })
+                      .catch(function (e) { alert("Update failed: " + e.message); })
+                      .finally(function () { setUpdating(false); });
+                  },
+                  style: { padding: "6px 14px", fontSize: "0.8rem", background: "#d29922", color: "#fff", border: "none", borderRadius: 6, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }
+                },
+                updating ? "⏳ Updating…" : "⬆ Update Now"
+              )
+            : h("button",
+                {
+                  disabled: checking,
+                  onClick: function () {
+                    setChecking(true);
+                    setVersionCheck(null);
+                    fetchJSON(API + "/version-check")
+                      .then(function (vc) {
+                        setVersionCheck(vc);
+                        if (vc.update_available === false) {
+                          // Already up to date — no need for update button
+                        } else if (vc.update_available === null) {
+                          alert("Could not check for updates: " + (vc.message || "Registry may be unavailable"));
+                        }
+                      })
+                      .catch(function (e) { alert("Version check failed: " + e.message); })
+                      .finally(function () { setChecking(false); });
+                  },
+                  style: { padding: "6px 14px", fontSize: "0.8rem", background: "#238636", color: "#fff", border: "none", borderRadius: 6, cursor: checking ? "not-allowed" : "pointer", opacity: checking ? 0.6 : 1 }
+                },
+                checking ? "⏳ Checking…" : "🔍 Check for Update"
+              )
+        ),
+        versionCheck && versionCheck.update_available === true
+          ? h("div", { style: { fontSize: "0.75rem", color: "#d29922", marginTop: 6 } },
+              "Update available: v" + (versionCheck.installed || "?") + " → v" + (versionCheck.latest || "?")
+            )
+          : null
       ),
 
       h("div", { style: S.statGrid },

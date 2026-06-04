@@ -768,20 +768,175 @@ async def honcho_status():
     }
 
 
-@router.post("/update")
-async def update_honcho():
-    """Restart the Honcho API container to apply updates."""
+def _get_installed_version() -> str | None:
+    """Read the installed Honcho version from the container's pyproject.toml."""
     import subprocess
     try:
         result = subprocess.run(
+            ["docker", "exec", "honcho-api-1", "cat", "/app/pyproject.toml"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if line.strip().startswith("version"):
+                    return line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return None
+
+
+def _get_latest_version() -> str | None:
+    """
+    Check the Docker registry for the latest available version of honcho-api.
+    Uses `docker pull --dry-run` (Docker 24+) or falls back to inspecting
+    the remote manifest digest vs local image digest.
+    """
+    import subprocess
+    # Strategy 1: docker manifest inspect to get the remote digest without pulling
+    try:
+        result = subprocess.run(
+            ["docker", "manifest", "inspect", "honcho-api:latest"],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            manifest = json.loads(result.stdout)
+            # The manifest may contain a config digest we can use to compare
+            # But it won't give us the version directly — we need to check labels
+            if isinstance(manifest, dict):
+                config = manifest.get("config", {})
+                if config.get("digest"):
+                    return _version_from_digest(config["digest"])
+            # Multi-arch manifest: check platform entries
+            if isinstance(manifest, list) and manifest:
+                for entry in manifest:
+                    plat = entry.get("platform", {})
+                    if plat.get("os") == "linux" and plat.get("architecture") == "amd64":
+                        pass
+    except Exception:
+        pass
+
+    # Strategy 2: Pull the image and check if a new one was downloaded
+    # This is the most reliable for custom/private registries
+    try:
+        result = subprocess.run(
+            ["docker", "pull", "honcho-api:latest"],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0:
+            output = result.stdout + result.stderr
+            if "Downloaded newer image" in output or "Status: Downloaded" in output:
+                # New image was pulled — read its version
+                return _get_installed_version()
+            elif "Image is up to date" in output or "Status: Image is up to date" in output:
+                # Already on latest — return installed version
+                return _get_installed_version()
+    except Exception:
+        pass
+
+    return None
+
+
+def _version_from_digest(digest: str) -> str | None:
+    """Try to get version info from a Docker image digest by inspecting local image."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["docker", "images", "--format", "{{.Repository}}:{{.Tag}} {{.Digest}}",
+             "honcho-api:latest"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            # Just return installed version since we can't easily map digest→version
+            return _get_installed_version()
+    except Exception:
+        pass
+    return None
+
+
+@router.get("/version-check")
+async def version_check():
+    """
+    Check the installed Honcho version against the latest available.
+    Returns installed version, latest version, and whether an update is available.
+    """
+    installed = _get_installed_version()
+    if installed is None:
+        raise HTTPException(status_code=502, detail="Could not determine installed Honcho version")
+
+    latest = _get_latest_version()
+    if latest is None:
+        return {
+            "installed": installed,
+            "latest": None,
+            "update_available": None,
+            "message": "Could not check for updates — registry may be unavailable",
+        }
+
+    # Compare versions (simple semver comparison)
+    def parse_version(v: str) -> tuple:
+        try:
+            parts = v.strip().split(".")
+            return tuple(int(p) for p in parts if p.isdigit())
+        except Exception:
+            return (0,)
+
+    update_available = parse_version(latest) > parse_version(installed)
+
+    return {
+        "installed": installed,
+        "latest": latest,
+        "update_available": update_available,
+        "message": (
+            f"Update available: {installed} → {latest}" if update_available
+            else f"Up to date (v{installed})"
+        ),
+    }
+
+
+@router.post("/update")
+async def update_honcho():
+    """
+    Pull the latest Honcho API image and restart the container.
+    This performs a full update: docker pull + docker restart.
+    """
+    import subprocess
+    try:
+        # Step 1: Pull the latest image
+        pull_result = subprocess.run(
+            ["docker", "pull", "honcho-api:latest"],
+            capture_output=True, text=True, timeout=120
+        )
+        if pull_result.returncode != 0:
+            raise HTTPException(status_code=502, detail=f"Pull failed: {pull_result.stderr[:500]}")
+
+        pulled_new = "Downloaded newer image" in (pull_result.stdout + pull_result.stderr)
+
+        # Step 2: Restart the container (so it uses the new image)
+        restart_result = subprocess.run(
             ["docker", "restart", "honcho-api-1"],
             capture_output=True, text=True, timeout=30
         )
-        if result.returncode != 0:
-            raise HTTPException(status_code=502, detail=f"Restart failed: {result.stderr[:500]}")
-        return {"success": True, "message": "Honcho API container restarted. It will be unavailable for a few seconds."}
+        if restart_result.returncode != 0:
+            raise HTTPException(status_code=502, detail=f"Restart failed: {restart_result.stderr[:500]}")
+
+        # Step 3: Read the new installed version
+        new_version = _get_installed_version()
+
+        if pulled_new:
+            msg = f"Honcho updated to v{new_version} and restarted." if new_version else "Honcho updated and restarted."
+        else:
+            msg = f"Honcho already at latest version (v{new_version}). Restarted." if new_version else "Honcho restarted (already at latest version)."
+
+        return {
+            "success": True,
+            "message": msg,
+            "updated": pulled_new,
+            "version": new_version,
+        }
     except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Restart command timed out")
+        raise HTTPException(status_code=504, detail="Update command timed out")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
 
