@@ -732,7 +732,6 @@ class TestDreamsTabJS:
 class TestDreamsTabFrontend:
     """Playwright-based frontend tests for the Dreams tab."""
 
-    @pytest.mark.xfail(reason="Requires gateway restart to load new JS", strict=False)
     def test_dreams_tab_renders_no_errors(self, page, errors):
         """Navigating to Dreams tab should not produce JS errors."""
         navigate_to_honcho_tab(page)
@@ -742,7 +741,6 @@ class TestDreamsTabFrontend:
         real = [e for e in errors if "JS_ERROR" in e and _known not in e]
         assert not real, f"JS errors on Dreams tab: {real[:5]}"
 
-    @pytest.mark.xfail(reason="Requires gateway restart to load new JS", strict=False)
     def test_dreams_tab_has_section_headings(self, page, errors):
         """Dreams tab should show Queue, Dream Health, and Dream History sections."""
         navigate_to_honcho_tab(page)

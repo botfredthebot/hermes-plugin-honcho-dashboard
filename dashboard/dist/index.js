@@ -1086,26 +1086,26 @@
           : h("table", { style: { width: "100%", fontSize: "0.8rem", borderCollapse: "collapse" } },
             h("thead", null,
               h("tr", { style: { borderBottom: "1px solid #30363d" } },
-                h("th", { style: T.th }, "Peer Pair"),
-                h("th", { style: T.th }, "Type"),
-                h("th", { style: T.th }, "Trigger"),
-                h("th", { style: T.th }, "Docs"),
-                h("th", { style: T.th }, "Queued"),
+                h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Peer Pair"),
+                h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Type"),
+                h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Trigger"),
+                h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Docs"),
+                h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Queued"),
               )
             ),
             h("tbody", null,
               activeDreams.map(function (d, i) {
                 var pairLabel = d.observer ? (d.observer + (d.observed && d.observed !== d.observer ? " → " + d.observed : "")) : "unknown";
                 return h("tr", { key: d.id || i, style: { borderBottom: "1px solid #21262d" } },
-                  h("td", { style: T.td }, h("span", { style: { color: "#e6edf3" } }, pairLabel)),
-                  h("td", { style: T.td }, h("span", { style: { color: "#8b949e" } }, d.dream_type || "omni")),
-                  h("td", { style: T.td }, h("span", { style: { color: d.trigger_reason === "manual" ? "#d29922" : "#8b949e" } }, d.trigger_reason || "-")),
-                  h("td", { style: T.td },
+                  h("td", { style: { padding: "6px 8px", color: "#8b949e" } }, h("span", { style: { color: "#e6edf3" } }, pairLabel)),
+                  h("td", { style: { padding: "6px 8px", color: "#8b949e" } }, h("span", { style: { color: "#8b949e" } }, d.dream_type || "omni")),
+                  h("td", { style: { padding: "6px 8px", color: "#8b949e" } }, h("span", { style: { color: d.trigger_reason === "manual" ? "#d29922" : "#8b949e" } }, d.trigger_reason || "-")),
+                  h("td", { style: { padding: "6px 8px", color: "#8b949e" } },
                     d.documents_since_last_dream != null && d.document_threshold
                       ? h("span", null, d.documents_since_last_dream, "/", d.document_threshold)
                       : h("span", { style: { color: "#6e7681" } }, "-")
                   ),
-                  h("td", { style: T.td }, h("span", { style: { color: "#6e7681" } }, d.created_at ? new Date(d.created_at).toLocaleString("en-GB") : "-")),
+                  h("td", { style: { padding: "6px 8px", color: "#8b949e" } }, h("span", { style: { color: "#6e7681" } }, d.created_at ? new Date(d.created_at).toLocaleString("en-GB") : "-")),
                 );
               })
             )
@@ -1122,12 +1122,12 @@
             : h("table", { style: { width: "100%", fontSize: "0.8rem", borderCollapse: "collapse" } },
               h("thead", null,
                 h("tr", { style: { borderBottom: "1px solid #30363d" } },
-                  h("th", { style: T.th }, "Peer Pair"),
-                  h("th", { style: T.th }, "Last Dream"),
-                  h("th", { style: T.th }, "Docs Since"),
-                  h("th", { style: T.th }, "Progress"),
-                  h("th", { style: T.th }, "Pending"),
-                  h("th", { style: T.th }, "Action"),
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Peer Pair"),
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Last Dream"),
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Docs Since"),
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Progress"),
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Pending"),
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", color: "#8b949e", fontWeight: 600, fontSize: "0.75rem" } }, "Action"),
                 )
               ),
               h("tbody", null,
@@ -1140,13 +1140,13 @@
                     ? new Date(p.last_dream_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
                     : "Never";
                   return h("tr", { key: i, style: { borderBottom: "1px solid #21262d" } },
-                    h("td", { style: T.td, style: Object.assign({}, T.td, { fontWeight: 600, color: "#e6edf3" }) }, pairLabel),
-                    h("td", { style: T.td }, h("span", { style: { color: "#8b949e" } }, lastDreamStr)),
-                    h("td", { style: T.td },
+                    h("td", { style: { padding: "6px 8px", color: "#8b949e" }, style: Object.assign({}, { padding: "6px 8px", color: "#8b949e" }, { fontWeight: 600, color: "#e6edf3" }) }, pairLabel),
+                    h("td", { style: { padding: "6px 8px", color: "#8b949e" } }, h("span", { style: { color: "#8b949e" } }, lastDreamStr)),
+                    h("td", { style: { padding: "6px 8px", color: "#8b949e" } },
                       h("span", { style: { color: p.documents_since_last_dream > 0 ? "#e6edf3" : "#6e7681" } },
                         p.documents_since_last_dream || 0)
                     ),
-                    h("td", { style: T.td },
+                    h("td", { style: { padding: "6px 8px", color: "#8b949e" } },
                       h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
                         h("div", { style: { width: 60, height: 6, background: "#21262d", borderRadius: 3, overflow: "hidden" } },
                           h("div", { style: { width: pct + "%", height: "100%", background: barColor, borderRadius: 3 } })
@@ -1154,12 +1154,12 @@
                         h("span", { style: { color: "#6e7681", fontSize: "0.7rem" } }, pct, "%")
                       )
                     ),
-                    h("td", { style: T.td },
+                    h("td", { style: { padding: "6px 8px", color: "#8b949e" } },
                       p.has_pending_dream
                         ? h("span", { style: { color: "#d29922", fontSize: "0.75rem" } }, "⏳ queued")
                         : h("span", { style: { color: "#6e7681" } }, "—")
                     ),
-                    h("td", { style: T.td },
+                    h("td", { style: { padding: "6px 8px", color: "#8b949e" } },
                       h("button", {
                         disabled: scheduling || p.has_pending_dream,
                         onClick: function () {
