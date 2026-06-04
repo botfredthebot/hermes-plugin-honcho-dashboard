@@ -402,7 +402,7 @@ async def session_messages(session_id: str, limit: int = Query(50, le=200), page
 async def list_conclusions(
     observer_id: str | None = None,
     observed_id: str | None = None,
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, le=5000),
 ):
     """List conclusions with optional filters."""
     body: dict = {"limit": limit}

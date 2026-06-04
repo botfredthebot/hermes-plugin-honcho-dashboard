@@ -710,7 +710,7 @@
     // Load conclusions (filtered)
     function loadConclusions() {
       setLoading(true);
-      var url = API + "/conclusions?limit=100";
+      var url = API + "/conclusions?limit=5000";
       if (filterPeer) url += "&observed_id=" + encodeURIComponent(filterPeer);
       fetchJSON(url)
         .then(function (d) { setData(d.items || []); })
