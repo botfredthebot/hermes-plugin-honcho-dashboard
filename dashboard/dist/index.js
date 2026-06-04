@@ -93,46 +93,46 @@
   // ---------------------------------------------------------------------------
 
   var S = {
-    // Layout
-    page: { height: "100%", display: "flex", flexDirection: "column" },
+    // Layout — transparent to let Hermes background show through
+    page: { height: "100%", display: "flex", flexDirection: "column", background: "transparent" },
     header: {
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "12px 24px", borderBottom: "1px solid #30363d",
-      background: "#161b22",
+      padding: "12px 24px", borderBottom: "1px solid #21262d",
+      background: "transparent",
     },
     headerTitle: { fontSize: "1.1em", fontWeight: 600, color: "#c9d1d9" },
-    tabs: { display: "flex", borderBottom: "1px solid #30363d", padding: "0 24px", gap: 4, background: "#161b22" },
-    body: { flex: 1, overflowY: "auto", padding: "24px", background: "#0d1117" },
+    tabs: { display: "flex", borderBottom: "1px solid #21262d", padding: "0 24px", gap: 4, background: "transparent" },
+    body: { flex: 1, overflowY: "auto", padding: "24px", background: "transparent" },
 
-    // Tab button
+    // Tab button — Hermes style: no border, bottom accent line
     tabBtn: function (active) {
       return {
         padding: "8px 16px", border: "none",
-        borderBottom: active ? "2px solid #58a6ff" : "2px solid transparent",
-        background: "transparent", color: active ? "#58a6ff" : "#8b949e",
+        borderBottom: active ? "2px solid #2ea043" : "2px solid transparent",
+        background: "transparent", color: active ? "#2ea043" : "#8b949e",
         cursor: "pointer", fontSize: "0.88em", fontWeight: active ? 600 : 400,
       };
     },
 
-    // Full-width row card
+    // Full-width row card — thin border, transparent bg, square corners
     rowCard: {
-      background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
+      background: "rgba(22, 27, 34, 0.6)", border: "1px solid #21262d", borderRadius: 0,
       padding: "12px 16px", marginBottom: 8,
     },
-    rowCardHighlight: { border: "1px solid #d2992244", background: "#1a1408" },
+    rowCardHighlight: { border: "1px solid #2ea043", background: "rgba(46, 160, 67, 0.06)" },
 
     // Row layout: left content + right actions
     rowInner: { display: "flex", justifyContent: "space-between", alignItems: "center" },
     rowLeft: { flex: 1, minWidth: 0 },
     rowRight: { display: "flex", gap: 6, alignItems: "center", flexShrink: 0, marginLeft: 12 },
 
-    // Stat cards
+    // Stat cards — thin green-tinted border, transparent bg
     statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 },
     statCard: {
-      background: "#161b22", border: "1px solid #30363d", borderRadius: 10,
+      background: "rgba(22, 27, 34, 0.5)", border: "1px solid #21262d", borderRadius: 0,
       padding: "20px", textAlign: "center",
     },
-    statNumber: { fontSize: "2em", fontWeight: 700, color: "#58a6ff", marginBottom: 4 },
+    statNumber: { fontSize: "2em", fontWeight: 700, color: "#2ea043", marginBottom: 4 },
     statLabel: { fontSize: "0.82em", color: "#8b949e" },
 
     // Section
@@ -145,77 +145,77 @@
     text: { fontSize: "0.88em", lineHeight: 1.5 },
     textSmall: { fontSize: "0.82em", lineHeight: 1.5 },
 
-    // Inputs
+    // Inputs — square corners, thin border
     input: {
-      padding: "6px 12px", background: "#0d1117", border: "1px solid #30363d",
-      borderRadius: 6, color: "#c9d1d9", fontSize: "0.85em", width: "300px",
+      padding: "6px 12px", background: "rgba(13, 17, 23, 0.7)", border: "1px solid #21262d",
+      borderRadius: 0, color: "#c9d1d9", fontSize: "0.85em", width: "300px",
     },
     textarea: {
-      width: "100%", padding: "8px 12px", background: "#0d1117",
-      border: "1px solid #30363d", borderRadius: 6, color: "#c9d1d9",
+      width: "100%", padding: "8px 12px", background: "rgba(13, 17, 23, 0.7)",
+      border: "1px solid #21262d", borderRadius: 0, color: "#c9d1d9",
       fontSize: "0.85em", minHeight: "80px", resize: "vertical", boxSizing: "border-box",
     },
     select: {
-      padding: "6px 12px", background: "#0d1117", border: "1px solid #30363d",
-      borderRadius: 6, color: "#c9d1d9", fontSize: "0.85em", minWidth: "200px",
+      padding: "6px 12px", background: "rgba(13, 17, 23, 0.7)", border: "1px solid #21262d",
+      borderRadius: 0, color: "#c9d1d9", fontSize: "0.85em", minWidth: "200px",
     },
 
-    // Buttons
+    // Buttons — square corners, Hermes green primary
     btn: {
-      background: "#21262d", border: "1px solid #30363d", borderRadius: 6,
+      background: "rgba(33, 38, 45, 0.6)", border: "1px solid #21262d", borderRadius: 0,
       color: "#c9d1d9", cursor: "pointer", fontSize: "0.82em", padding: "4px 12px",
     },
     btnPrimary: {
-      background: "#238636", border: "1px solid #2ea043", borderRadius: 6,
+      background: "#238636", border: "1px solid #2ea043", borderRadius: 0,
       color: "#fff", cursor: "pointer", fontSize: "0.82em", padding: "6px 14px",
     },
     btnSmall: {
-      background: "none", border: "1px solid #30363d", borderRadius: 4,
-      color: "#58a6ff", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
+      background: "transparent", border: "1px solid #21262d", borderRadius: 0,
+      color: "#2ea043", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
     },
     btnBack: {
-      background: "none", border: "1px solid #30363d", borderRadius: 4,
+      background: "transparent", border: "1px solid #21262d", borderRadius: 0,
       color: "#8b949e", cursor: "pointer", fontSize: "0.82em", padding: "4px 10px",
       marginRight: 8,
     },
     btnDelete: {
-      background: "none", border: "1px solid #f85149", borderRadius: 4,
+      background: "transparent", border: "1px solid #f85149", borderRadius: 0,
       color: "#f85149", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
     },
     btnDeleteConfirm: {
-      background: "#f85149", border: "1px solid #f85149", borderRadius: 4,
+      background: "#f85149", border: "1px solid #f85149", borderRadius: 0,
       color: "#fff", cursor: "pointer", fontSize: "0.75em", padding: "2px 8px",
     },
 
-    // Status
-    ok: { color: "#3fb950" },
+    // Status — Hermes green/red/amber
+    ok: { color: "#2ea043" },
     bad: { color: "#f85149" },
     warn: { color: "#d29922" },
 
     // Bar chart
     barChart: { display: "flex", alignItems: "flex-end", gap: 4, height: "160px", padding: "10px 0" },
     barCol: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" },
-    bar: { width: "100%", background: "#58a6ff", borderRadius: "3px 3px 0 0", minHeight: 4 },
+    bar: { width: "100%", background: "#2ea043", borderRadius: 0, minHeight: 4 },
     barSecondary: { background: "#a371f7" },
     barVal: { fontSize: "0.65em", color: "#8b949e", marginTop: 2 },
 
     // Queue
     queueRow: { marginBottom: 12 },
-    queueBarBg: { background: "#21262d", borderRadius: 4, height: 8, width: "100%", marginTop: 4 },
-    queueBarFill: { height: "100%", borderRadius: 4 },
+    queueBarBg: { background: "rgba(33, 38, 45, 0.6)", borderRadius: 0, height: 8, width: "100%", marginTop: 4 },
+    queueBarFill: { height: "100%", borderRadius: 0 },
     queuePct: { fontSize: "0.75em", color: "#8b949e", marginLeft: 8 },
 
-    // Insight
+    // Insight — transparent bg, thin border
     insightBox: {
-      background: "#161b22", border: "1px solid #30363d", borderRadius: 8,
+      background: "rgba(22, 27, 34, 0.5)", border: "1px solid #21262d", borderRadius: 0,
       padding: "14px 16px", marginBottom: 16,
     },
     insightLabel: { color: "#8b949e", fontSize: "0.8rem", marginBottom: "0.5rem" },
 
-    // DB badge
+    // DB badge — square corners
     dbBadge: {
       display: "flex", alignItems: "center", gap: 6,
-      padding: "6px 10px", marginBottom: 10, borderRadius: 6,
+      padding: "6px 10px", marginBottom: 10, borderRadius: 0,
       fontSize: "0.72em",
     },
   };
@@ -247,9 +247,9 @@
     var connected = status && status.connected;
     return h("div", {
       style: Object.assign({}, S.dbBadge, {
-        background: connected ? "#0d2b1b" : "#2b0d0d",
+        background: connected ? "#0d2b1b" : "rgba(248, 81, 73, 0.08)",
         border: "1px solid " + (connected ? "#2ea043" : "#f85149"),
-        color: connected ? "#3fb950" : "#f85149",
+        color: connected ? "#2ea043" : "#f85149",
       }),
     },
       h("span", null, connected ? "🟢" : "🔴"),
@@ -606,7 +606,7 @@
         ),
 
         // Search section
-        h("div", { style: { marginBottom: 20, padding: "12px 14px", background: "#161b22", border: "1px solid #30363d", borderRadius: 8 } },
+        h("div", { style: { marginBottom: 20, padding: "12px 14px", background: "rgba(22, 27, 34, 0.5)", border: "1px solid #30363d", borderRadius: 0 } },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
             h("span", { style: { fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9" } }, "🔍 Search Messages"),
             h("button", { onClick: function () { setShowSearch(!showSearch); }, style: S.btnSmall },
@@ -637,7 +637,7 @@
                         (searchResults.items || []).map(function (r, i) {
                           var content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
                           return h("div", { key: i, style: { padding: "6px 0", borderBottom: "1px solid #21262d", fontSize: "0.82em" } },
-                            h("span", { style: { color: "#58a6ff", marginRight: 8 } },
+                            h("span", { style: { color: "#2ea043", marginRight: 8 } },
                               r.session_id ? "[" + truncate(r.session_id, 30) + "]" : ""
                             ),
                             h("span", { style: { color: "#8b949e" } }, truncate(content, 200))
@@ -668,10 +668,10 @@
                   h("div", { style: S.rowLeft },
                     h("div", { style: Object.assign({}, S.mono, { fontSize: "0.82em" }) }, s.id),
                     h("div", { style: { fontSize: "0.78em", marginTop: 2 } },
-                      h("span", { style: { color: isEmpty ? "#d29922" : "#3fb950" } },
+                      h("span", { style: { color: isEmpty ? "#d29922" : "#2ea043" } },
                         msgCount, " ", msgCount === 1 ? "message" : "messages"
                       ),
-                      s.is_active ? h("span", { style: { color: "#3fb950", marginLeft: 8 } }, "· Active") : null,
+                      s.is_active ? h("span", { style: { color: "#2ea043", marginLeft: 8 } }, "· Active") : null,
                       isEmpty ? h("span", { style: { color: "#d29922", marginLeft: 8 } }, "· ⚠ Empty") : null
                     ),
                     h("div", { style: S.small }, "Created: ", fmtDate(s.created_at))
@@ -750,7 +750,7 @@
         var peer = m.peer_id || m.from || "?";
         var text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
         return h("div", { key: m.id || String(i), style: { padding: "6px 0", fontSize: "0.82em", borderBottom: "1px solid #21262d" } },
-          h("span", { style: { color: "#58a6ff", marginRight: 8 } }, "[" + peer + "]"),
+          h("span", { style: { color: "#2ea043", marginRight: 8 } }, "[" + peer + "]"),
           h("span", { style: { color: "#c9d1d9" } }, truncate(text, 300))
         );
       })
@@ -950,7 +950,7 @@
         h("div", { style: {
           padding: "24px",
           background: "#1c1f26",
-          borderRadius: 8,
+          borderRadius: 0,
           border: "1px solid #30363d",
           textAlign: "center",
           color: "#8b949e",
@@ -981,7 +981,7 @@
       h("div", { style: {
         padding: "10px 14px",
         background: "#1c1f26",
-        borderRadius: 6,
+        borderRadius: 0,
         border: "1px solid #30363d",
         marginBottom: 16,
         display: "flex",
@@ -1066,7 +1066,7 @@
                 pairHealth.map(function (p, i) {
                   var threshold = (config && config.DOCUMENT_THRESHOLD) || 50;
                   var pct = Math.min(100, Math.round((p.documents_since_last_dream / threshold) * 100));
-                  var barColor = pct >= 100 ? "#238636" : pct >= 70 ? "#d29922" : "#30363d";
+                  var barColor = pct >= 100 ? "#238636" : pct >= 70 ? "#d29922" : "#21262d";
                   var pairLabel = p.observer + (p.observed !== p.observer ? " → " + p.observed : "");
                   var lastDreamStr = p.last_dream_at
                     ? new Date(p.last_dream_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
@@ -1080,8 +1080,8 @@
                     ),
                     h("td", { style: { padding: "6px 8px", color: "#8b949e" } },
                       h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-                        h("div", { style: { width: 60, height: 6, background: "#21262d", borderRadius: 3, overflow: "hidden" } },
-                          h("div", { style: { width: pct + "%", height: "100%", background: barColor, borderRadius: 3 } })
+                        h("div", { style: { width: 60, height: 6, background: "rgba(33, 38, 45, 0.6)", borderRadius: 0, overflow: "hidden" } },
+                          h("div", { style: { width: pct + "%", height: "100%", background: barColor, borderRadius: 0 } })
                         ),
                         h("span", { style: { color: "#6e7681", fontSize: "0.7rem" } }, pct, "%")
                       )
@@ -1113,10 +1113,10 @@
                         style: {
                           padding: "3px 8px",
                           fontSize: "0.7rem",
-                          background: p.has_pending_dream ? "#30363d" : "#238636",
+                          background: p.has_pending_dream ? "#21262d" : "#238636",
                           color: "#fff",
                           border: "none",
-                          borderRadius: 4,
+                          borderRadius: 0,
                           cursor: p.has_pending_dream || scheduling ? "not-allowed" : "pointer",
                           opacity: p.has_pending_dream ? 0.5 : 1,
                         }
@@ -1140,8 +1140,8 @@
               var completedStr = h_item.completed_at ? new Date(h_item.completed_at).toLocaleString("en-GB") : "unknown";
               return h("div", { key: h_item.id || i, style: {
                 padding: "10px 12px",
-                background: "#0d1117",
-                borderRadius: 6,
+                background: "rgba(13, 17, 23, 0.7)",
+                borderRadius: 0,
                 border: "1px solid #30363d",
                 marginBottom: 8,
               }},
@@ -1152,7 +1152,7 @@
                 h("div", { style: { display: "flex", gap: 12, fontSize: "0.75rem", color: "#8b949e" } },
                   h("span", null, "Type: ", h("strong", null, h_item.dream_type || "omni")),
                   h("span", null, "Trigger: ", h("strong", null, h_item.trigger_reason || "-")),
-                  h("span", null, "Conclusions: ", h("strong", { style: { color: h_item.conclusions_count > 0 ? "#3fb950" : "#6e7681" } }, h_item.conclusions_count || 0)),
+                  h("span", null, "Conclusions: ", h("strong", { style: { color: h_item.conclusions_count > 0 ? "#2ea043" : "#6e7681" } }, h_item.conclusions_count || 0)),
                   h_item.error ? h("span", { style: { color: "#f85149" } }, "Error: " + h_item.error) : null,
                 ),
                 h_item.conclusions_sample && h_item.conclusions_sample.length > 0
@@ -1163,7 +1163,7 @@
                           fontSize: "0.7rem",
                           color: "#8b949e",
                           padding: "2px 0",
-                          borderLeft: "2px solid " + (c.level === "deductive" ? "#58a6ff" : c.level === "inductive" ? "#3fb950" : "#d29922"),
+                          borderLeft: "2px solid " + (c.level === "deductive" ? "#2ea043" : c.level === "inductive" ? "#2ea043" : "#d29922"),
                           paddingLeft: 6,
                           marginBottom: 2,
                         } },
@@ -1235,12 +1235,12 @@
             "Version: ", h("strong", { style: { color: "#e6edf3" } }, data.honcho_version || "unknown")
           ),
           versionCheck && versionCheck.update_available === true
-            ? h("span", { style: { fontSize: "0.75rem", color: "#d29922", background: "#3b2300", padding: "2px 8px", borderRadius: 4 } },
+            ? h("span", { style: { fontSize: "0.75rem", color: "#d29922", background: "rgba(210, 153, 34, 0.12)", padding: "2px 8px", borderRadius: 0 } },
                 "⬆ " + (versionCheck.latest || "update available")
               )
             : null,
           versionCheck && versionCheck.update_available === false
-            ? h("span", { style: { fontSize: "0.75rem", color: "#3fb950" } }, "✓ Up to date")
+            ? h("span", { style: { fontSize: "0.75rem", color: "#2ea043" } }, "✓ Up to date")
             : null
         ),
         h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
@@ -1265,7 +1265,7 @@
                       .catch(function (e) { alert("Update failed: " + e.message); })
                       .finally(function () { setUpdating(false); });
                   },
-                  style: { padding: "6px 14px", fontSize: "0.8rem", background: "#d29922", color: "#fff", border: "none", borderRadius: 6, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }
+                  style: { padding: "6px 14px", fontSize: "0.8rem", background: "#d29922", color: "#fff", border: "none", borderRadius: 0, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }
                 },
                 updating ? "⏳ Updating…" : "⬆ Update Now"
               )
@@ -1287,7 +1287,7 @@
                       .catch(function (e) { alert("Version check failed: " + e.message); })
                       .finally(function () { setChecking(false); });
                   },
-                  style: { padding: "6px 14px", fontSize: "0.8rem", background: "#238636", color: "#fff", border: "none", borderRadius: 6, cursor: checking ? "not-allowed" : "pointer", opacity: checking ? 0.6 : 1 }
+                  style: { padding: "6px 14px", fontSize: "0.8rem", background: "#238636", color: "#fff", border: "none", borderRadius: 0, cursor: checking ? "not-allowed" : "pointer", opacity: checking ? 0.6 : 1 }
                 },
                 checking ? "⏳ Checking…" : "🔍 Check for Update"
               )
@@ -1344,7 +1344,7 @@
                 h("div", { style: S.queueBarBg },
                   h("div", { style: Object.assign({}, S.queueBarFill, {
                     width: pct + "%",
-                    background: pct === 100 ? "#3fb950" : active > 0 ? "#d29922" : "#58a6ff",
+                    background: pct === 100 ? "#2ea043" : active > 0 ? "#d29922" : "#2ea043",
                   }) })
                 )
               );
@@ -1588,7 +1588,7 @@
           h("div", {style: {fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9"}}, icon, " ", title, headerExtra || null),
           h("span", {style: {fontSize: "2.25em", color: "#8b949e", lineHeight: 1}}, isCollapsed ? "▸" : "▾")
         ),
-        isCollapsed ? null : h("div", {style: {background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px"}}, children)
+        isCollapsed ? null : h("div", {style: {background: "rgba(13, 17, 23, 0.7)", border: "1px solid #21262d", borderRadius: 0, padding: "8px 12px"}}, children)
       );
     }
 
@@ -1620,8 +1620,8 @@
             description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginTop: 2}}, description) : null
           ),
           h("button", {onClick: onClick, title: titleText,
-            style: {width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
-              background: isOn ? "#238636" : "#30363d", position: "relative", padding: 0, transition: "background 0.2s"},
+            style: {width: 48, height: 26, borderRadius: 0, border: "none", cursor: "pointer",
+              background: isOn ? "#238636" : "#21262d", position: "relative", padding: 0, transition: "background 0.2s"},
           },
             h("div", {style: {width: 20, height: 20, borderRadius: 10, background: "#fff", position: "absolute", top: 3, left: isOn ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)"}})
           )
@@ -1668,12 +1668,12 @@
 
     function renderModelCard(title, icon, modelCfg) {
       if (!modelCfg) return null;
-      return h("div", {style: {marginBottom: 10, padding: "10px 12px", background: "#0d1117", border: "1px solid #21262d", borderRadius: 6}},
+      return h("div", {style: {marginBottom: 10, padding: "10px 12px", background: "rgba(13, 17, 23, 0.7)", border: "1px solid #21262d", borderRadius: 0}},
         h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4}},
           h("span", {style: {fontWeight: 600, fontSize: "0.85em"}}, icon, " ", title),
-          h("span", {style: {fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "#161b22", borderRadius: 4, border: "1px solid #30363d"}}, modelCfg.transport || "")
+          h("span", {style: {fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "rgba(22, 27, 34, 0.5)", borderRadius: 0, border: "1px solid #30363d"}}, modelCfg.transport || "")
         ),
-        h("div", {style: {fontFamily: "monospace", fontSize: "0.82em", color: "#58a6ff", marginBottom: 2}}, modelCfg.model || "unknown"),
+        h("div", {style: {fontFamily: "monospace", fontSize: "0.82em", color: "#2ea043", marginBottom: 2}}, modelCfg.model || "unknown"),
         h("div", {style: {fontSize: "0.72em", color: "#8b949e"}},
           modelCfg.max_output_tokens != null ? "Max output: " + modelCfg.max_output_tokens + " · " : "",
           "Thinking: ", h("strong", null, modelCfg.thinking_budget_tokens != null ? String(modelCfg.thinking_budget_tokens) : "—")
@@ -1759,7 +1759,7 @@
         h("div", {style: S.sectionTitle}, "🌐 Global Settings"),
         h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Server-level defaults. Changes restart the Honcho service."),
         h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 14}},
-          globalSaveMsg ? h("span", {style: {fontSize: "0.78em", color: globalSaveMsg.type === "ok" ? "#3fb950" : "#f85149"}}, globalSaveMsg.text) : null,
+          globalSaveMsg ? h("span", {style: {fontSize: "0.78em", color: globalSaveMsg.type === "ok" ? "#2ea043" : "#f85149"}}, globalSaveMsg.text) : null,
           h("button", {onClick: handleSaveGlobal, disabled: globalSaving || !hasGlobalEdits, style: hasGlobalEdits ? S.btnPrimary : S.btn},
             globalSaving ? "Saving…" : (hasGlobalEdits ? "💾 Save Global Changes" : "No changes")
           )
@@ -1865,7 +1865,7 @@
         h("div", null,
           h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Override global defaults. Greyed-out = using global default."),
           h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 14}},
-            saveMsg ? h("span", {style: {fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149"}}, saveMsg.text) : null,
+            saveMsg ? h("span", {style: {fontSize: "0.78em", color: saveMsg.type === "ok" ? "#2ea043" : "#f85149"}}, saveMsg.text) : null,
             h("button", {onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary}, saving ? "Saving…" : "💾 Save Workspace Overrides")
           ),
           renderToggle("Enable Reasoning", "reasoning.enabled", true, "Override global deriver setting"),
@@ -1921,21 +1921,21 @@
           ),
 
           (impSelected.length > 5 || impTotalMessages > 500)
-            ? h("div", {style: {padding: "8px 12px", background: "#3f2c00", border: "1px solid #d29922", borderRadius: 6, marginBottom: 12, fontSize: "0.78em", color: "#d29922"}},
+            ? h("div", {style: {padding: "8px 12px", background: "rgba(210, 153, 34, 0.12)", border: "1px solid #d29922", borderRadius: 0, marginBottom: 12, fontSize: "0.78em", color: "#d29922"}},
                 "⚠️ Large import (" + impSelected.length + " sessions, ~" + impTotalMessages + " messages). This may take a while.")
             : null,
 
-          h("div", {style: {maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6}},
+          h("div", {style: {maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 0}},
             impFilteredSessions().map(function (s) {
               var isSel = impSelected.indexOf(s.id) >= 0;
-              return h("div", {key: s.id, style: {display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid #21262d", background: isSel ? "#161b22" : "transparent", opacity: s.already_imported ? 0.6 : 1}},
+              return h("div", {key: s.id, style: {display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid #21262d", background: isSel ? "rgba(22, 27, 34, 0.5)" : "transparent", opacity: s.already_imported ? 0.6 : 1}},
                 h("input", {type: "checkbox", checked: isSel, onChange: function () { impToggleSession(s.id); }}),
                 h("div", {style: {flex: 1, minWidth: 0}},
                   h("div", {style: {fontSize: "0.82em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}, s.title || s.id),
                   h("div", {style: {fontSize: "0.7em", color: "#8b949e", marginTop: 2}}, impFormatDate(s.started_at) + " · " + s.source + " · " + s.user_messages + " user / " + s.assistant_messages + " asst")
                 ),
                 s.already_imported
-                  ? h("span", {style: {fontSize: "0.68em", color: "#3fb950", padding: "2px 6px", background: "#0d1117", borderRadius: 4, border: "1px solid #238636", whiteSpace: "nowrap"}}, "✓ imported")
+                  ? h("span", {style: {fontSize: "0.68em", color: "#2ea043", padding: "2px 6px", background: "rgba(13, 17, 23, 0.7)", borderRadius: 0, border: "1px solid #238636", whiteSpace: "nowrap"}}, "✓ imported")
                   : null
               );
             })
@@ -1953,13 +1953,13 @@
 
           // Import results
           impResult && impResult.results
-            ? h("div", {style: {marginTop: 16, border: "1px solid #21262d", borderRadius: 6, overflow: "hidden"}},
-                h("div", {style: {padding: "8px 12px", background: "#161b22", borderBottom: "1px solid #21262d", fontWeight: 600, fontSize: "0.82em"}}, "Import Results (" + impResult.results.length + " sessions)"),
+            ? h("div", {style: {marginTop: 16, border: "1px solid #21262d", borderRadius: 0, overflow: "hidden"}},
+                h("div", {style: {padding: "8px 12px", background: "rgba(22, 27, 34, 0.5)", borderBottom: "1px solid #21262d", fontWeight: 600, fontSize: "0.82em"}}, "Import Results (" + impResult.results.length + " sessions)"),
                 h("div", {style: {maxHeight: 300, overflowY: "auto"}},
                   impResult.results.map(function (r, idx) {
-                    return h("div", {key: idx, style: {padding: "8px 12px", borderBottom: "1px solid #21262d", background: r.success ? "transparent" : "#2b0d0d"}},
+                    return h("div", {key: idx, style: {padding: "8px 12px", borderBottom: "1px solid #21262d", background: r.success ? "transparent" : "rgba(248, 81, 73, 0.08)"}},
                       h("div", {style: {display: "flex", alignItems: "center", gap: 8}},
-                        h("span", {style: {color: r.success ? "#3fb950" : "#f85149"}}, r.success ? "✓" : "✗"),
+                        h("span", {style: {color: r.success ? "#2ea043" : "#f85149"}}, r.success ? "✓" : "✗"),
                         h("span", {style: {fontSize: "0.82em", fontWeight: 600}}, r.session_id),
                         h("span", {style: {fontSize: "0.7em", color: "#8b949e"}}, r.success ? "imported" : r.error)
                       )
@@ -1970,7 +1970,7 @@
             : null
         ),
         impResult && impResult.summary
-          ? h("span", {style: {fontSize: "0.78em", color: impResult.success ? "#3fb950" : "#f85149"}},
+          ? h("span", {style: {fontSize: "0.78em", color: impResult.success ? "#2ea043" : "#f85149"}},
               impResult.dry_run ? "Dry run" : "Done",
               " · " + impResult.summary.imported + " imported, " + impResult.summary.errors + " errors"
             )
