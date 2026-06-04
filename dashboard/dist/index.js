@@ -1710,21 +1710,35 @@
       );
     }
 
-    function renderTextarea(label, path, description) {
-      var val = getNested(config && config.configuration, path) || "";
+    function renderTextarea(label, path, isWorkspace, description) {
+      var val, onChange;
+      if (isWorkspace) {
+        val = getNested(config && config.configuration, path) || "";
+        onChange = function (e) { updateWorkspaceField(path, e.target.value); };
+      } else {
+        val = getGlobalValue(path) || "";
+        onChange = function (e) { updateEditedGlobal(path, e.target.value); };
+      }
       return h("div", {style: {marginBottom: 14}},
         h("div", {style: {fontWeight: 600, fontSize: "0.88em", marginBottom: 4}}, label),
         description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 6}}, description) : null,
-        h("textarea", {value: val, onChange: function (e) { updateWorkspaceField(path, e.target.value); }, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea})
+        h("textarea", {value: val, onChange: onChange, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea})
       );
     }
 
     function renderSelect(label, path, isWorkspace, options, description) {
-      var val = getNested(config && config.configuration, path) || "";
+      var val, onChange;
+      if (isWorkspace) {
+        val = getNested(config && config.configuration, path) || "";
+        onChange = function (e) { updateWorkspaceField(path, e.target.value); };
+      } else {
+        val = getGlobalValue(path) || "";
+        onChange = function (e) { updateEditedGlobal(path, e.target.value); };
+      }
       return h("div", {style: {marginBottom: 14}},
         h("div", {style: {fontWeight: 600, fontSize: "0.88em", marginBottom: 4}}, label),
         description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 6}}, description) : null,
-        h("select", {value: val, onChange: function (e) { updateWorkspaceField(path, e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
+        h("select", {value: val, onChange: onChange, style: Object.assign({}, S.input, {minWidth: 180})},
           options.map(function (opt) { return h("option", {key: opt, value: opt}, opt); })
         )
       );
@@ -1946,7 +1960,7 @@
             h("button", {onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary}, saving ? "Saving…" : "💾 Save Workspace Overrides")
           ),
           renderToggle("Enable Reasoning", "reasoning.enabled", true, "Override global deriver setting"),
-          renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions"),
+          renderTextarea("Custom Instructions", "reasoning.custom_instructions", true, "Optional custom instructions"),
           h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Peer Cards"),
           renderToggle("Use Peer Cards", "peer_card.use", true, "Override global peer card setting"),
           renderToggle("Create Peer Cards", "peer_card.create", true, "Override global peer card creation"),
