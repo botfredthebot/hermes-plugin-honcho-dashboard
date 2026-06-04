@@ -984,6 +984,7 @@
     var _u = useState(null), data = _u[0], setData = _u[1];
     var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
     var _u3 = useState(null), error = _u3[0], setError = _u3[1];
+    var _u4 = useState(false), updating = _u4[0], setUpdating = _u4[1];
 
     useEffect(function () {
       setLoading(true);
@@ -1008,6 +1009,37 @@
 
       // DB Status badge at top of Status tab
       h(DbStatusBadge),
+
+      // Version + Update
+      h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
+        h("div", { style: { fontSize: "0.85rem", color: "#8b949e" } },
+          "Version: ", h("strong", { style: { color: "#e6edf3" } }, data.honcho_version || "unknown")
+        ),
+        h("button",
+          {
+            disabled: updating,
+            onClick: function () {
+              if (!window.confirm("Restart Honcho API container? It will be unavailable for a few seconds.")) return;
+              setUpdating(true);
+              fetch(API + "/update", { method: "POST", headers: authHeaders() })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                  if (d.success) {
+                    alert(d.message || "Update triggered.");
+                    // Reload status after a delay
+                    setTimeout(function () { setLoading(true); fetchJSON(API + "/status").then(function (d) { setData(d); setError(null); }).catch(function (e) { setError(e.message); }).finally(function () { setLoading(false); }); }, 3000);
+                  } else {
+                    alert("Error: " + (d.detail || "Unknown error"));
+                  }
+                })
+                .catch(function (e) { alert("Update failed: " + e.message); })
+                .finally(function () { setUpdating(false); });
+            },
+            style: { padding: "6px 14px", fontSize: "0.8rem", background: "#238636", color: "#fff", border: "none", borderRadius: 6, cursor: updating ? "not-allowed" : "pointer", opacity: updating ? 0.6 : 1 }
+          },
+          updating ? "⏳ Restarting…" : "🔄 Update Now"
+        )
+      ),
 
       h("div", { style: S.statGrid },
         h("div", { style: S.statCard },

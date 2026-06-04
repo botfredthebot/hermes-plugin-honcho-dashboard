@@ -703,10 +703,11 @@ async def analytics():
 
 @router.get("/status")
 async def honcho_status():
-    """Honcho health + queue status + connected apps."""
+    """Honcho health + queue status + version info."""
     # Honcho health
     honcho_ok = False
     honcho_error = None
+    honcho_version = None
     try:
         req = urllib.request.Request(
             f"{HONCHO_BASE}/health",
@@ -716,6 +717,22 @@ async def honcho_status():
             honcho_ok = resp.status == 200
     except Exception as e:
         honcho_error = str(e)
+
+    # Get Honcho version from container
+    if honcho_ok:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["docker", "exec", "honcho-api-1", "cat", "/app/pyproject.toml"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if line.strip().startswith("version"):
+                        honcho_version = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            honcho_version = None
 
     # Queue status
     try:
@@ -739,6 +756,7 @@ async def honcho_status():
     return {
         "honcho_reachable": honcho_ok,
         "honcho_error": honcho_error,
+        "honcho_version": honcho_version,
         "queue": {
             "total": total_wu,
             "completed": completed_wu,
@@ -748,6 +766,24 @@ async def honcho_status():
             "sessions": sessions_queue,
         },
     }
+
+
+@router.post("/update")
+async def update_honcho():
+    """Restart the Honcho API container to apply updates."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["docker", "restart", "honcho-api-1"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=502, detail=f"Restart failed: {result.stderr[:500]}")
+        return {"success": True, "message": "Honcho API container restarted. It will be unavailable for a few seconds."}
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Restart command timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
 
 
 @router.post("/peer/{peerId}/insight")
