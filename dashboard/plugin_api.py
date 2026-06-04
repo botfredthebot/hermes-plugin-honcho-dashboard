@@ -189,11 +189,14 @@ async def overview():
     """High-level stats for the Overview tab."""
     peers = honcho_post(f"/v3/workspaces/{WORKSPACE}/peers/list", {"limit": 100})
     sessions = honcho_post(f"/v3/workspaces/{WORKSPACE}/sessions/list", {"limit": 100})
-    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 100})
+    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 1})
 
     peer_items = peers.get("items", [])
     session_items = sessions.get("items", [])
-    conclusion_items = conclusions.get("items", [])
+    # Use 'total' from API response for accurate counts (Honcho paginates at ~200/page)
+    total_peers = peers.get("total", len(peer_items))
+    total_sessions = sessions.get("total", len(session_items))
+    total_conclusions = conclusions.get("total", 0)
 
     # Count messages across all sessions (sample first 5 for speed)
     total_messages = 0
@@ -207,17 +210,18 @@ async def overview():
         except Exception:
             pass
 
-    # Recent conclusions (last 10, sorted by date)
+    # Recent conclusions (last 10, sorted by date) — fetch a small page for display
+    recent_conclusions_raw = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 10})
     recent_conclusions = sorted(
-        conclusion_items,
+        recent_conclusions_raw.get("items", []),
         key=lambda c: c.get("created_at", ""),
         reverse=True,
     )[:10]
 
     return {
-        "peers": {"total": len(peer_items), "items": peer_items},
-        "sessions": {"total": len(session_items), "items": session_items},
-        "conclusions": {"total": len(conclusion_items), "recent": recent_conclusions},
+        "peers": {"total": total_peers, "items": peer_items},
+        "sessions": {"total": total_sessions, "items": session_items},
+        "conclusions": {"total": total_conclusions, "recent": recent_conclusions},
         "messages_sampled": total_messages,
     }
 
@@ -226,18 +230,22 @@ async def overview():
 async def list_peers():
     """List all peers with their session and conclusion counts."""
     peers = honcho_post(f"/v3/workspaces/{WORKSPACE}/peers/list", {"limit": 100})
-    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 100})
-
-    conclusion_items = conclusions.get("items", [])
-
-    # Count conclusions per peer (as observed)
+    # Count conclusions per peer — paginate through all conclusions
     concluded_about: dict[str, int] = {}
     concluded_by: dict[str, int] = {}
-    for c in conclusion_items:
-        obs = c.get("observed_id", "")
-        obr = c.get("observer_id", "")
-        concluded_about[obs] = concluded_about.get(obs, 0) + 1
-        concluded_by[obr] = concluded_by.get(obr, 0) + 1
+    page = 1
+    while True:
+        conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 200, "page": page})
+        conclusion_items = conclusions.get("items", [])
+        for c in conclusion_items:
+            obs = c.get("observed_id", "")
+            obr = c.get("observer_id", "")
+            concluded_about[obs] = concluded_about.get(obs, 0) + 1
+            concluded_by[obr] = concluded_by.get(obr, 0) + 1
+        pages = conclusions.get("pages", 1)
+        if page >= pages:
+            break
+        page += 1
 
     peer_items = peers.get("items", [])
     for p in peer_items:
@@ -404,17 +412,31 @@ async def list_conclusions(
     observed_id: str | None = None,
     limit: int = Query(50, le=5000),
 ):
-    """List conclusions with optional filters."""
-    body: dict = {"limit": limit}
+    """List conclusions with optional filters. Auto-paginates to return all results."""
     filters = {}
     if observer_id:
         filters["observer_id"] = observer_id
     if observed_id:
         filters["observed_id"] = observed_id
-    if filters:
-        body["options"] = {"filters": filters}
 
-    return honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", body)
+    # Auto-paginate: fetch all pages and combine
+    all_items = []
+    page = 1
+    per_page = min(limit, 200)  # Honcho API max per page is 200
+    while True:
+        body: dict = {"limit": per_page, "page": page}
+        if filters:
+            body["options"] = {"filters": filters}
+        resp = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", body)
+        items = resp.get("items", [])
+        all_items.extend(items)
+        total = resp.get("total", 0)
+        pages = resp.get("pages", 1)
+        if page >= pages or len(all_items) >= total:
+            break
+        page += 1
+
+    return {"items": all_items, "total": len(all_items), "page": 1, "size": len(all_items), "pages": 1}
 
 
 @router.delete("/conclusions/all")
@@ -425,8 +447,14 @@ async def delete_all_conclusions(confirm: bool = Query(False)):
     """
     # Use Honcho's native API to delete all conclusions
     # First get the list, then delete each (Honcho API doesn't have a bulk delete)
-    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 1000})
+    conclusions = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 200, "page": 1})
+    total = conclusions.get("total", 0)
+    pages = conclusions.get("pages", 1)
     items = conclusions.get("items", [])
+    # Fetch remaining pages if needed
+    for p in range(2, pages + 1):
+        more = honcho_post(f"/v3/workspaces/{WORKSPACE}/conclusions/list", {"limit": 200, "page": p})
+        items.extend(more.get("items", []))
 
     if not items:
         return {"success": True, "deleted": 0, "message": "No conclusions to delete."}
