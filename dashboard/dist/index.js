@@ -1,7 +1,7 @@
 /**
  * Honcho Dashboard — Hermes Dashboard Plugin
  *
- * Tabs: Overview, Peers, Sessions, Conclusions, Search, Analytics, Status, Config, Import.
+ * Tabs: Overview, Peers, Sessions, Conclusions, Dreams, Status, Config.
  * Features: sidebar nav, full-width list layouts, delete buttons on right,
  *   peer filter dropdown on conclusions, DB status on Status tab.
  */
@@ -467,6 +467,12 @@
     var _u5 = useState(null), deletePreview = _u5[0], setDeletePreview = _u5[1];
     var _u6 = useState(false), deleting = _u6[0], setDeleting = _u6[1];
     var _u7 = useState(false), deletingAll = _u7[0], setDeletingAll = _u7[1];
+    // Search state
+    var _u8 = useState(""), searchQuery = _u8[0], setSearchQuery = _u8[1];
+    var _u9 = useState(null), searchResults = _u9[0], setSearchResults = _u9[1];
+    var _u10 = useState(false), searchLoading = _u10[0], setSearchLoading = _u10[1];
+    var _u11 = useState(null), searchError = _u11[0], setSearchError = _u11[1];
+    var _u12 = useState(false), showSearch = _u12[0], setShowSearch = _u12[1];
 
     function loadSessions() {
       setLoading(true);
@@ -477,6 +483,17 @@
     }
 
     useEffect(function () { loadSessions(); }, []);
+
+    // Search messages across all sessions
+    function doSearch() {
+      if (!searchQuery.trim()) return;
+      setSearchLoading(true);
+      setSearchError(null);
+      fetchJSON(API + "/search?q=" + encodeURIComponent(searchQuery) + "&limit=20")
+        .then(function (d) { setSearchResults(d); })
+        .catch(function (e) { setSearchError(e.message); })
+        .finally(function () { setSearchLoading(false); });
+    }
 
     var emptySessions = sessions.filter(function (s) { return (s.message_count || 0) === 0; });
 
@@ -567,29 +584,74 @@
     }
 
     return h("div", null,
-      // Header
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
-        h("div", { style: { fontWeight: 600 } },
-          "All Sessions (", sessions.length, ")",
-          emptySessions.length > 0
-            ? h("span", { style: { color: "#d29922", fontSize: "0.82em", marginLeft: 8 } },
-                "— ", emptySessions.length, " empty"
+        // Header
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+          h("div", { style: { fontWeight: 600 } },
+            "All Sessions (", sessions.length, ")",
+            emptySessions.length > 0
+              ? h("span", { style: { color: "#d29922", fontSize: "0.82em", marginLeft: 8 } },
+                  "— ", emptySessions.length, " empty")
+              : null
+          ),
+          h("div", { style: { display: "flex", gap: 8 } },
+            sessions.length > 0
+              ? h("button", { onClick: handleDeleteAllSessions, disabled: deletingAll, style: S.btnDelete },
+                  deletingAll ? "Deleting…" : "🗑 Delete All (" + sessions.length + ")")
+              : null,
+            emptySessions.length > 0
+              ? h("button", { onClick: deleteAllEmpty, style: S.btnDelete },
+                  "🗑 Delete All Empty (" + emptySessions.length + ")")
+              : null
+          )
+        ),
+
+        // Search section
+        h("div", { style: { marginBottom: 20, padding: "12px 14px", background: "#161b22", border: "1px solid #30363d", borderRadius: 8 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+            h("span", { style: { fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9" } }, "🔍 Search Messages"),
+            h("button", { onClick: function () { setShowSearch(!showSearch); }, style: S.btnSmall },
+              showSearch ? "▾ Hide" : "▸ Show")
+          ),
+          showSearch
+            ? h("div", null,
+                h("div", { style: { display: "flex", gap: 8, marginBottom: 10 } },
+                  h("input", {
+                    style: Object.assign({}, S.input, { flex: 1 }),
+                    placeholder: "Search messages across all sessions…",
+                    value: searchQuery,
+                    onChange: function (e) { setSearchQuery(e.target.value); },
+                    onKeyPress: function (e) { if (e.key === "Enter") doSearch(); },
+                  }),
+                  h("button", { onClick: doSearch, disabled: searchLoading, style: S.btnPrimary },
+                    searchLoading ? "Searching…" : "Search")
+                ),
+                searchError
+                  ? h("div", { style: { color: "#f85149", fontSize: "0.82em", marginBottom: 8 } }, "⚠️ " + searchError)
+                  : null,
+                searchLoading
+                  ? h("div", { style: { color: "#8b949e", fontSize: "0.82em" } }, "Searching…")
+                  : searchResults
+                    ? h("div", null,
+                        h("div", { style: { color: "#8b949e", fontSize: "0.78em", marginBottom: 6 } },
+                          (searchResults.items || []).length, " results for \"", searchResults.query || searchQuery, "\""),
+                        (searchResults.items || []).map(function (r, i) {
+                          var content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
+                          return h("div", { key: i, style: { padding: "6px 0", borderBottom: "1px solid #21262d", fontSize: "0.82em" } },
+                            h("span", { style: { color: "#58a6ff", marginRight: 8 } },
+                              r.session_id ? "[" + truncate(r.session_id, 30) + "]" : ""
+                            ),
+                            h("span", { style: { color: "#8b949e" } }, truncate(content, 200))
+                          );
+                        })
+                      )
+                    : searchQuery
+                      ? h("div", { style: { color: "#8b949e", fontSize: "0.82em" } }, "Press Enter or click Search to find messages.")
+                      : null
               )
             : null
         ),
-        h("div", { style: { display: "flex", gap: 8 } },
-          sessions.length > 0
-            ? h("button", { onClick: handleDeleteAllSessions, disabled: deletingAll, style: S.btnDelete },
-                deletingAll ? "Deleting…" : "🗑 Delete All (" + sessions.length + ")")
-            : null,
-          emptySessions.length > 0
-            ? h("button", { onClick: deleteAllEmpty, style: S.btnDelete },
-                "🗑 Delete All Empty (" + emptySessions.length + ")")
-            : null
-        )
-      ),
 
-      // Session list
+        // Session list
       loading
         ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Loading…")
         : sessions.length === 0
@@ -844,137 +906,7 @@
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Search Tab
-  // ---------------------------------------------------------------------------
 
-  function SearchTab() {
-    var _u = useState(""), query = _u[0], setQuery = _u[1];
-    var _u2 = useState(null), results = _u2[0], setResults = _u2[1];
-    var _u3 = useState(false), loading = _u3[0], setLoading = _u3[1];
-    var _u4 = useState(null), error = _u4[0], setError = _u4[1];
-
-    function doSearch() {
-      if (!query.trim()) return;
-      setLoading(true);
-      setError(null);
-      fetchJSON(API + "/search?q=" + encodeURIComponent(query) + "&limit=20")
-        .then(function (d) { setResults(d); })
-        .catch(function (e) { setError(e.message); })
-        .finally(function () { setLoading(false); });
-    }
-
-    var items = results ? (results.items || results || []) : [];
-    if (results && results.error) error = results.error;
-    if (results && results.detail) error = results.detail;
-
-    return h("div", null,
-      h("div", { style: { marginBottom: 16, display: "flex", gap: 8 } },
-        h("input", {
-          style: Object.assign({}, S.input, { width: "400px" }),
-          placeholder: "Search messages across all peers…",
-          value: query,
-          onChange: function (e) { setQuery(e.target.value); },
-          onKeyPress: function (e) { if (e.key === "Enter") doSearch(); },
-        }),
-        h("button", { onClick: doSearch, style: S.btnPrimary }, "Search")
-      ),
-      loading
-        ? h("div", { style: { color: "#8b949e", padding: 40 } }, "Searching…")
-        : error
-        ? h("div", { style: { color: "#f85149", padding: 20 } }, "⚠️ ", error)
-        : results && items.length === 0
-        ? h("div", { style: { color: "#8b949e", padding: 40 } }, "No results found.")
-        : results
-        ? h("div", null,
-            h("div", { style: { marginBottom: 12, color: "#8b949e", fontSize: "0.82em" } }, items.length, " results for \"", query, "\""),
-            items.map(function (r, i) {
-              var content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
-              return h("div", { key: String(i), style: S.rowCard },
-                h("div", { style: { marginBottom: 4 } },
-                  h("span", { style: { color: "#58a6ff", fontSize: "0.78em", marginRight: 8 } },
-                    r.session_id ? "[" + truncate(r.session_id, 40) + "]" : ""
-                  ),
-                  r.peer_id ? h("span", { style: { color: "#a371f7", fontSize: "0.78em" } }, r.peer_id) : null
-                ),
-                h("div", { style: S.textSmall }, truncate(content, 300))
-              );
-            })
-          )
-        : h("div", { style: { color: "#8b949e", padding: 40 } }, "Enter a search query to find messages across all sessions.")
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Analytics Tab
-  // ---------------------------------------------------------------------------
-
-  function AnalyticsTab() {
-    var _u = useState(null), data = _u[0], setData = _u[1];
-    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
-    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
-
-    useEffect(function () {
-      setLoading(true);
-      fetchJSON(API + "/analytics")
-        .then(function (d) { setData(d); setError(null); })
-        .catch(function (e) { setError(e.message); })
-        .finally(function () { setLoading(false); });
-    }, []);
-
-    if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading analytics…");
-    if (error) return h("div", { style: { padding: 40, color: "#f85149" } }, "⚠️ " + error);
-    if (!data) return null;
-
-    var days = data.days || [];
-    var msgByDay = data.messages_by_day || {};
-    var concByDay = data.conclusions_by_day || {};
-    var maxMsgs = Math.max.apply(null, days.map(function (d) { return msgByDay[d] || 0; }).concat([1]));
-    var maxConcs = Math.max.apply(null, days.map(function (d) { return concByDay[d] || 0; }).concat([1]));
-
-    function dayLabel(d) {
-      var dt = new Date(d + "T00:00:00");
-      return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-    }
-
-    return h("div", null,
-      h("h2", { style: { marginBottom: 16 } }, "Analytics (last 14 days)"),
-      h("div", { style: S.statGrid },
-        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_sessions)), h("div", { style: S.statLabel }, "Total Sessions")),
-        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_messages)), h("div", { style: S.statLabel }, "Total Messages")),
-        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_conclusions)), h("div", { style: S.statLabel }, "Total Conclusions")),
-        h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(data.total_peers)), h("div", { style: S.statLabel }, "Peers")),
-      ),
-      h("div", { style: S.rowCard },
-        h("h3", { style: { marginBottom: 8 } }, "📨 Messages per Day"),
-        h("div", { style: S.barChart },
-          days.map(function (d) {
-            var count = msgByDay[d] || 0;
-            var barH = Math.round((count / maxMsgs) * 120);
-            return h("div", { key: d, style: S.barCol },
-              h("div", { style: Object.assign({}, S.bar, { height: barH + "px" }), title: count + " messages on " + d }),
-              h("small", null, dayLabel(d)),
-              h("small", { style: S.barVal }, String(count))
-            );
-          })
-        )
-      ),
-      h("div", { style: Object.assign({}, S.rowCard, { marginTop: 16 }) },
-        h("h3", { style: { marginBottom: 8 } }, "🧠 Conclusions per Day"),
-        h("div", { style: S.barChart },
-          days.map(function (d) {
-            var count = concByDay[d] || 0;
-            var barH = Math.round((count / maxConcs) * 120);
-            return h("div", { key: d, style: S.barCol },
-              h("div", { style: Object.assign({}, S.bar, S.barSecondary, { height: barH + "px" }), title: count + " conclusions on " + d }),
-              h("small", null, dayLabel(d)),
-              h("small", { style: S.barVal }, String(count))
-            );
-          })
-        )
-      )
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Dreams Tab — dream queue, per-pair health, history, manual trigger
@@ -1258,13 +1190,26 @@
     var _u4 = useState(false), updating = _u4[0], setUpdating = _u4[1];
     var _u5 = useState(null), versionCheck = _u5[0], setVersionCheck = _u5[1];
     var _u6 = useState(false), checking = _u6[0], setChecking = _u6[1];
+    // Analytics state
+    var _u7 = useState(null), analytics = _u7[0], setAnalytics = _u7[1];
+    var _u8 = useState(true), analyticsLoading = _u8[0], setAnalyticsLoading = _u8[1];
 
     useEffect(function () {
       setLoading(true);
-      fetchJSON(API + "/status")
-        .then(function (d) { setData(d); setError(null); })
-        .catch(function (e) { setError(e.message); })
-        .finally(function () { setLoading(false); });
+      setAnalyticsLoading(true);
+      Promise.all([
+        fetchJSON(API + "/status"),
+        fetchJSON(API + "/analytics"),
+      ]).then(function (results) {
+        setData(results[0]);
+        setAnalytics(results[1]);
+        setError(null);
+      }).catch(function (e) {
+        setError(e.message);
+      }).finally(function () {
+        setLoading(false);
+        setAnalyticsLoading(false);
+      });
     }, []);
 
     if (loading) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading status…");
@@ -1404,12 +1349,63 @@
                 )
               );
             })
+      ),
+
+      // --- Analytics section ---
+      h("div", { style: { marginTop: 24 } },
+        h("h3", { style: { marginBottom: 12, fontSize: "1rem" } }, "📊 Analytics (last 14 days)"),
+        analyticsLoading
+          ? h("div", { style: { color: "#8b949e", fontSize: "0.85rem" } }, "Loading analytics…")
+          : analytics
+            ? h("div", null,
+                h("div", { style: S.statGrid },
+                  h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(analytics.total_sessions || 0)), h("div", { style: S.statLabel }, "Total Sessions")),
+                  h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(analytics.total_messages || 0)), h("div", { style: S.statLabel }, "Total Messages")),
+                  h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(analytics.total_conclusions || 0)), h("div", { style: S.statLabel }, "Total Conclusions")),
+                  h("div", { style: S.statCard }, h("div", { style: S.statNumber }, String(analytics.total_peers || 0)), h("div", { style: S.statLabel }, "Peers")),
+                ),
+                h("div", { style: Object.assign({}, S.rowCard, { marginTop: 16 }) },
+                  h("h4", { style: { marginBottom: 8, fontSize: "0.9rem" } }, "📨 Messages per Day"),
+                  h("div", { style: S.barChart },
+                    (analytics.days || []).map(function (d) {
+                      var count = (analytics.messages_by_day || {})[d] || 0;
+                      var maxMsgs = Math.max.apply(null, (analytics.days || []).map(function (dd) { return (analytics.messages_by_day || {})[dd] || 0; }).concat([1]));
+                      var barH = Math.round((count / maxMsgs) * 120);
+                      var dt = new Date(d + "T00:00:00");
+                      var label = dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+                      return h("div", { key: d, style: S.barCol },
+                        h("div", { style: Object.assign({}, S.bar, { height: barH + "px" }), title: count + " messages on " + d }),
+                        h("small", null, label),
+                        h("small", { style: S.barVal }, String(count))
+                      );
+                    })
+                  )
+                ),
+                h("div", { style: Object.assign({}, S.rowCard, { marginTop: 16 }) },
+                  h("h4", { style: { marginBottom: 8, fontSize: "0.9rem" } }, "🧠 Conclusions per Day"),
+                  h("div", { style: S.barChart },
+                    (analytics.days || []).map(function (d) {
+                      var count = (analytics.conclusions_by_day || {})[d] || 0;
+                      var maxConcs = Math.max.apply(null, (analytics.days || []).map(function (dd) { return (analytics.conclusions_by_day || {})[dd] || 0; }).concat([1]));
+                      var barH = Math.round((count / maxConcs) * 120);
+                      var dt = new Date(d + "T00:00:00");
+                      var label = dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+                      return h("div", { key: d, style: S.barCol },
+                        h("div", { style: Object.assign({}, S.bar, S.barSecondary, { height: barH + "px" }), title: count + " conclusions on " + d }),
+                        h("small", null, label),
+                        h("small", { style: S.barVal }, String(count))
+                      );
+                    })
+                  )
+                )
+              )
+            : h("div", { style: { color: "#8b949e", fontSize: "0.85rem" } }, "Analytics unavailable.")
       )
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Config Tab — editable global settings + workspace overrides
+  // Config Tab — editable global settings + workspace overrides + Import
   // ---------------------------------------------------------------------------
 
   function ConfigTab() {
@@ -1423,6 +1419,31 @@
     var _u8 = useState(false), globalSaving = _u8[0], setGlobalSaving = _u8[1];
     var _u9 = useState(null), globalSaveMsg = _u9[0], setGlobalSaveMsg = _u9[1];
     var _u10 = useState({}), editedGlobal = _u10[0], setEditedGlobal = _u10[1];
+    // Collapsed state for each section (default: expanded)
+    var _u11 = useState({
+      deriver: true, dialectic: true, summary: true, dream: true,
+      peerCards: true, embedding: true, cache: true, app: true,
+      auth: true, vectorStore: true, models: true, import: true,
+    }), collapsed = _u11[0], setCollapsed = _u11[1];
+    // Import state
+    var _u12 = useState(null), impSessions = _u12[0], setImpSessions = _u12[1];
+    var _u13 = useState(true), impLoading = _u13[0], setImpLoading = _u13[1];
+    var _u14 = useState(null), impError = _u14[0], setImpError = _u14[1];
+    var _u15 = useState([]), impSelected = _u15[0], setImpSelected = _u15[1];
+    var _u16 = useState(null), impPeers = _u16[0], setImpPeers = _u16[1];
+    var _u17 = useState(""), impUserPeer = _u17[0], setUserPeer = _u17[1];
+    var _u18 = useState(""), impAsstPeer = _u18[0], setAsstPeer = _u18[1];
+    var _u19 = useState(""), impFilter = _u19[0], setImpFilter = _u19[1];
+    var _u20 = useState(false), impDryRun = _u20[0], setImpDryRun = _u20[1];
+    var _u21 = useState(false), impImporting = _u21[0], setImpImporting = _u21[1];
+    var _u22 = useState(null), impResult = _u22[0], setImpResult = _u22[1];
+    var _u23 = useState(false), impConfirm = _u23[0], setImpConfirm = _u23[1];
+
+    function toggleSection(key) {
+      var next = Object.assign({}, collapsed);
+      next[key] = !next[key];
+      setCollapsed(next);
+    }
 
     function loadConfig() {
       setLoading(true); setError(null);
@@ -1440,7 +1461,25 @@
         .finally(function () { setGlobalLoading(false); });
     }
 
-    useEffect(function () { loadConfig(); loadGlobalConfig(); }, []);
+    function loadImportSessions() {
+      setImpLoading(true);
+      fetchJSON(API + "/hermes-sessions")
+        .then(function (d) {
+          setImpSessions(d);
+          var toSelect = (d.sessions || []).filter(function (s) { return !s.already_imported; }).map(function (s) { return s.id; });
+          setImpSelected(toSelect);
+        })
+        .catch(function (e) { setImpError(e.message); })
+        .finally(function () { setImpLoading(false); });
+    }
+
+    function loadImportPeers() {
+      fetchJSON(API + "/peers")
+        .then(function (d) { setImpPeers(d); })
+        .catch(function () {});
+    }
+
+    useEffect(function () { loadConfig(); loadGlobalConfig(); loadImportSessions(); loadImportPeers(); }, []);
 
     function getNested(obj, path) {
       if (!obj) return undefined;
@@ -1495,16 +1534,16 @@
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d.success) { setSaveMsg({ type: "ok", text: "Workspace config saved." }); loadConfig(); }
-          else { setSaveMsg({ type: "err", text: (d.detail || "Save failed") }); }
+          if (d.success) { setSaveMsg({type: "ok", text: "Workspace config saved."}); loadConfig(); }
+          else { setSaveMsg({type: "err", text: (d.detail || "Save failed")}); }
         })
-        .catch(function (e) { setSaveMsg({ type: "err", text: e.message }); })
+        .catch(function (e) { setSaveMsg({type: "err", text: e.message}); })
         .finally(function () { setSaving(false); });
     }
 
     function handleSaveGlobal() {
       if (Object.keys(editedGlobal).length === 0) {
-        setGlobalSaveMsg({ type: "err", text: "No changes to save." });
+        setGlobalSaveMsg({type: "err", text: "No changes to save."});
         return;
       }
       setGlobalSaving(true); setGlobalSaveMsg(null);
@@ -1516,13 +1555,28 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d.success) {
-            setGlobalSaveMsg({ type: "ok", text: "Global config saved. Service restarting…" });
+            setGlobalSaveMsg({type: "ok", text: "Global config saved. Service restarting…"});
             setEditedGlobal({});
             setTimeout(function () { loadGlobalConfig(); }, 3000);
-          } else { setGlobalSaveMsg({ type: "err", text: (d.detail || "Save failed") }); }
+          } else { setGlobalSaveMsg({type: "err", text: (d.detail || "Save failed")}); }
         })
-        .catch(function (e) { setGlobalSaveMsg({ type: "err", text: e.message }); })
+        .catch(function (e) { setGlobalSaveMsg({type: "err", text: e.message}); })
         .finally(function () { setGlobalSaving(false); });
+    }
+
+    // Collapsible section wrapper
+    function renderSection(key, title, icon, children) {
+      var isCollapsed = !collapsed[key];
+      return h("div", {style: {marginBottom: 14}},
+        h("div", {
+          onClick: function () { toggleSection(key); },
+          style: {display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", padding: "6px 0"}
+        },
+          h("div", {style: {fontWeight: 600, fontSize: "0.85em", color: "#c9d1d9"}}, icon, " ", title),
+          h("span", {style: {fontSize: "0.75em", color: "#8b949e"}}, isCollapsed ? "▸" : "▾")
+        ),
+        isCollapsed ? null : h("div", {style: {background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px"}}, children)
+      );
     }
 
     function renderToggle(label, path, isWorkspace, description) {
@@ -1534,9 +1588,9 @@
         var gVal = getGlobalValue(path);
         isGreyed = !overridden && gVal != null;
         badge = isGreyed
-          ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global")
+          ? h("span", {style: {fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400}}, "— global")
           : overridden
-          ? h("span", { style: { fontSize: "0.7em", color: "#d29922", marginLeft: 6, fontWeight: 400 } }, "— overridden")
+          ? h("span", {style: {fontSize: "0.7em", color: "#d29922", marginLeft: 6, fontWeight: 400}}, "— overridden")
           : null;
         titleText = isGreyed ? "Global: " + (isOn ? "ON" : "OFF") + ". Click to override." : (isOn ? "ON" : "OFF") + " — click to toggle";
         onClick = function () { updateWorkspaceField(path, !isOn); };
@@ -1546,17 +1600,17 @@
         titleText = (isOn ? "ON" : "OFF") + " — click to toggle";
         onClick = function () { updateEditedGlobal(path, !isOn); };
       }
-      return h("div", { style: { marginBottom: 14, opacity: isGreyed ? 0.5 : 1 } },
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+      return h("div", {style: {marginBottom: 14, opacity: isGreyed ? 0.5 : 1}},
+        h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center"}},
           h("div", null,
-            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label, badge),
-            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+            h("div", {style: {fontWeight: 600, fontSize: "0.88em"}}, label, badge),
+            description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginTop: 2}}, description) : null
           ),
-          h("button", { onClick: onClick, title: titleText,
-            style: { width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
-              background: isOn ? "#238636" : "#30363d", position: "relative", padding: 0, transition: "background 0.2s" },
+          h("button", {onClick: onClick, title: titleText,
+            style: {width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+              background: isOn ? "#238636" : "#30363d", position: "relative", padding: 0, transition: "background 0.2s"},
           },
-            h("div", { style: { width: 20, height: 20, borderRadius: 10, background: "#fff", position: "absolute", top: 3, left: isOn ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" } })
+            h("div", {style: {width: 20, height: 20, borderRadius: 10, background: "#fff", position: "absolute", top: 3, left: isOn ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)"}})
           )
         )
       );
@@ -1571,20 +1625,20 @@
         isGreyed = !overridden && gVal != null;
         val = (wsVal != null) ? wsVal : (gVal != null ? gVal : "");
         onChange = function (e) { var v = parseInt(e.target.value, 10); if (!isNaN(v)) updateWorkspaceField(path, v); };
-        badge = isGreyed ? h("span", { style: { fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400 } }, "— global") : null;
+        badge = isGreyed ? h("span", {style: {fontSize: "0.7em", color: "#8b949e", marginLeft: 6, fontWeight: 400}}, "— global") : null;
       } else {
         val = getGlobalValue(path); val = (val != null) ? val : "";
         onChange = function (e) { var v = parseInt(e.target.value, 10); if (!isNaN(v)) updateEditedGlobal(path, v); };
         isGreyed = false; badge = null;
       }
-      return h("div", { style: { marginBottom: 14, opacity: isGreyed ? 0.5 : 1 } },
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+      return h("div", {style: {marginBottom: 14, opacity: isGreyed ? 0.5 : 1}},
+        h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center"}},
           h("div", null,
-            h("div", { style: { fontWeight: 600, fontSize: "0.88em" } }, label, badge),
-            description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginTop: 2 } }, description) : null
+            h("div", {style: {fontWeight: 600, fontSize: "0.88em"}}, label, badge),
+            description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginTop: 2}}, description) : null
           ),
-          h("input", { type: "number", min: min, max: max, value: val, onChange: onChange,
-            style: Object.assign({}, S.input, { width: "100px", textAlign: "center" }),
+          h("input", {type: "number", min: min, max: max, value: val, onChange: onChange,
+            style: Object.assign({}, S.input, {width: "100px", textAlign: "center"}),
           })
         )
       );
@@ -1592,22 +1646,22 @@
 
     function renderTextarea(label, path, description) {
       var val = getNested(config && config.configuration, path) || "";
-      return h("div", { style: { marginBottom: 14 } },
-        h("div", { style: { fontWeight: 600, fontSize: "0.88em", marginBottom: 4 } }, label),
-        description ? h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 6 } }, description) : null,
-        h("textarea", { value: val, onChange: function (e) { updateWorkspaceField(path, e.target.value); }, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea })
+      return h("div", {style: {marginBottom: 14}},
+        h("div", {style: {fontWeight: 600, fontSize: "0.88em", marginBottom: 4}}, label),
+        description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 6}}, description) : null,
+        h("textarea", {value: val, onChange: function (e) { updateWorkspaceField(path, e.target.value); }, placeholder: "Enter custom instructions…", rows: 3, style: S.textarea})
       );
     }
 
     function renderModelCard(title, icon, modelCfg) {
       if (!modelCfg) return null;
-      return h("div", { style: { marginBottom: 10, padding: "10px 12px", background: "#0d1117", border: "1px solid #21262d", borderRadius: 6 } },
-        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
-          h("span", { style: { fontWeight: 600, fontSize: "0.85em" } }, icon, " ", title),
-          h("span", { style: { fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "#161b22", borderRadius: 4, border: "1px solid #30363d" } }, modelCfg.transport || "")
+      return h("div", {style: {marginBottom: 10, padding: "10px 12px", background: "#0d1117", border: "1px solid #21262d", borderRadius: 6}},
+        h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4}},
+          h("span", {style: {fontWeight: 600, fontSize: "0.85em"}}, icon, " ", title),
+          h("span", {style: {fontSize: "0.72em", color: "#8b949e", padding: "2px 8px", background: "#161b22", borderRadius: 4, border: "1px solid #30363d"}}, modelCfg.transport || "")
         ),
-        h("div", { style: { fontFamily: "monospace", fontSize: "0.82em", color: "#58a6ff", marginBottom: 2 } }, modelCfg.model || "unknown"),
-        h("div", { style: { fontSize: "0.72em", color: "#8b949e" } },
+        h("div", {style: {fontFamily: "monospace", fontSize: "0.82em", color: "#58a6ff", marginBottom: 2}}, modelCfg.model || "unknown"),
+        h("div", {style: {fontSize: "0.72em", color: "#8b949e"}},
           modelCfg.max_output_tokens != null ? "Max output: " + modelCfg.max_output_tokens + " · " : "",
           "Thinking: ", h("strong", null, modelCfg.thinking_budget_tokens != null ? String(modelCfg.thinking_budget_tokens) : "—")
         )
@@ -1620,41 +1674,82 @@
       var lvls = dia.levels || {};
       return {
         deriver: (gc.deriver || {}).model_config || null,
-        dialectic: { minimal: (lvls.minimal || {}).model_config || null, low: (lvls.low || {}).model_config || null, medium: (lvls.medium || {}).model_config || null, high: (lvls.high || {}).model_config || null, max: (lvls.max || {}).model_config || null },
+        dialectic: {minimal: (lvls.minimal || {}).model_config || null, low: (lvls.low || {}).model_config || null, medium: (lvls.medium || {}).model_config || null, high: (lvls.high || {}).model_config || null, max: (lvls.max || {}).model_config || null},
         summary: (gc.summary || {}).model_config || null,
-        dream: { main: ((gc.dream || {}).main_model_config) || null, deduction: ((gc.dream || {}).deduction_model_config) || null, induction: ((gc.dream || {}).induction_model_config) || null },
+        dream: {main: ((gc.dream || {}).main_model_config) || null, deduction: ((gc.dream || {}).deduction_model_config) || null, induction: ((gc.dream || {}).induction_model_config) || null},
         embedding: (gc.embedding || {}).model_config || null,
       };
     }
 
-    if (loading && !config) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading…");
-    if (error) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadConfig },
-      h("div", null, "⚠️ Failed to load"), h("div", { style: { fontSize: "0.82em", marginTop: 4 } }, error),
-      h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry.")
+    // Import helpers
+    function impFilteredSessions() {
+      if (!impSessions || !impSessions.sessions) return [];
+      if (!impFilter.trim()) return impSessions.sessions;
+      var q = impFilter.toLowerCase();
+      return impSessions.sessions.filter(function (s) { return (s.title || s.id).toLowerCase().indexOf(q) >= 0; });
+    }
+
+    function impToggleSession(id) {
+      var idx = impSelected.indexOf(id);
+      if (idx >= 0) { impSelected.splice(idx, 1); } else { impSelected.push(id); }
+      setImpSelected(impSelected.slice());
+    }
+
+    function impSelectAll() { setImpSelected(impFilteredSessions().map(function (s) { return s.id; })); }
+    function impDeselectAll() { setImpSelected([]); }
+
+    function impHandleImport() {
+      if (!impUserPeer || !impAsstPeer) { setImpError("Please select both User and Assistant peers"); return; }
+      if (impSelected.length === 0) { setImpError("No sessions selected"); return; }
+      setImpResult(null); setImpImporting(true);
+      fetch(API + "/import-sessions", {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({session_ids: impSelected, user_peer_id: impUserPeer, assistant_peer_id: impAsstPeer, dry_run: impDryRun}),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { setImpResult(d); })
+        .catch(function (e) { setImpError(e.message); })
+        .finally(function () { setImpImporting(false); });
+    }
+
+    function impFormatDate(ts) {
+      if (!ts) return "unknown";
+      var d = new Date(ts * 1000);
+      return d.toLocaleDateString() + " " + d.toLocaleTimeString();
+    }
+
+    if (loading && !config) return h("div", {style: {padding: 40, color: "#8b949e"}}, "Loading…");
+    if (error) return h("div", {style: {padding: 40, color: "#f85149", cursor: "pointer"}, onClick: loadConfig},
+      h("div", null, "⚠️ Failed to load"), h("div", {style: {fontSize: "0.82em", marginTop: 4}}, error),
+      h("div", {style: {fontSize: "0.75em", marginTop: 8, color: "#8b949e"}}, "Click to retry.")
     );
 
     var models = extractModels(globalConfig);
     var hasGlobalEdits = Object.keys(editedGlobal).length > 0;
+    var impPeerItems = (impPeers && impPeers.peers) || [];
+    var impTotalMessages = impSelected.reduce(function (acc, sid) {
+      var s = (impSessions && impSessions.sessions || []).find(function (x) { return x.id === sid; });
+      return acc + (s ? s.total_importable : 0);
+    }, 0);
 
     return h("div", null,
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-        h("h2", { style: { margin: 0 } }, "Configuration")
+      h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16}},
+        h("h2", {style: {margin: 0}}, "Configuration")
       ),
 
       // ── GLOBAL SETTINGS ─────────────────────────────────────────────
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "🌐 Global Settings"),
-        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Server-level defaults. Changes restart the Honcho service."),
-        h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 14 } },
-          globalSaveMsg ? h("span", { style: { fontSize: "0.78em", color: globalSaveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, globalSaveMsg.text) : null,
-          h("button", { onClick: handleSaveGlobal, disabled: globalSaving || !hasGlobalEdits, style: hasGlobalEdits ? S.btnPrimary : S.btn },
+      h("div", {style: S.section},
+        h("div", {style: S.sectionTitle}, "🌐 Global Settings"),
+        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Server-level defaults. Changes restart the Honcho service."),
+        h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 14}},
+          globalSaveMsg ? h("span", {style: {fontSize: "0.78em", color: globalSaveMsg.type === "ok" ? "#3fb950" : "#f85149"}}, globalSaveMsg.text) : null,
+          h("button", {onClick: handleSaveGlobal, disabled: globalSaving || !hasGlobalEdits, style: hasGlobalEdits ? S.btnPrimary : S.btn},
             globalSaving ? "Saving…" : (hasGlobalEdits ? "💾 Save Global Changes" : "No changes")
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "⚡ Deriver"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("deriver", "Deriver", "⚡",
+          h("div", null,
             renderToggle("Enabled", "deriver.ENABLED", false),
             renderNumber("Workers", "deriver.WORKERS", false, null, 1, 20),
             renderNumber("Polling interval (s)", "deriver.POLLING_SLEEP_INTERVAL_SECONDS", false, null, 0.1, 60),
@@ -1664,27 +1759,24 @@
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🗣 Dialectic"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("dialectic", "Dialectic", "🗣",
+          h("div", null,
             renderNumber("Max output tokens", "dialectic.MAX_OUTPUT_TOKENS", false, null, 256, 32768),
             renderNumber("Max input tokens", "dialectic.MAX_INPUT_TOKENS", false, null, 1000, 200000),
             renderNumber("History token limit", "dialectic.HISTORY_TOKEN_LIMIT", false, null, 1000, 24000)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "📝 Summary"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("summary", "Summary", "📝",
+          h("div", null,
             renderToggle("Enabled", "summary.ENABLED", false),
             renderNumber("Messages per short", "summary.MESSAGES_PER_SHORT_SUMMARY", false, "Min 10", 10, 500),
             renderNumber("Messages per long", "summary.MESSAGES_PER_LONG_SUMMARY", false, "Min 20", 20, 1000)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "💤 Dream"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("dream", "Dream", "💤",
+          h("div", null,
             renderToggle("Enabled", "dream.ENABLED", false),
             renderNumber("Document threshold", "dream.DOCUMENT_THRESHOLD", false, null, 10, 1000),
             renderNumber("Idle timeout (min)", "dream.IDLE_TIMEOUT_MINUTES", false, null, 5, 480),
@@ -1693,341 +1785,189 @@
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "👤 Peer Cards"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("peerCards", "Peer Cards", "👤",
+          h("div", null,
             renderToggle("Enabled", "peer_card.ENABLED", false)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🔢 Embedding"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("embedding", "Embedding", "🔢",
+          h("div", null,
             renderNumber("Vector dimensions", "embedding.VECTOR_DIMENSIONS", false, null, 128, 3072),
             renderNumber("Max input tokens", "embedding.MAX_INPUT_TOKENS", false, null, 512, 32768)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "💾 Cache"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("cache", "Cache", "💾",
+          h("div", null,
             renderToggle("Enabled", "cache.ENABLED", false),
             renderNumber("Default TTL (s)", "cache.DEFAULT_TTL_SECONDS", false, null, 30, 3600)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "⚙️ App"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("app", "App", "⚙️",
+          h("div", null,
             renderNumber("Session observers limit", "app.SESSION_OBSERVERS_LIMIT", false, null, 1, 50),
             renderToggle("Embed messages", "app.EMBED_MESSAGES", false)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🔐 Auth"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("auth", "Auth", "🔐",
+          h("div", null,
             renderToggle("Use auth", "auth.USE_AUTH", false)
           )
         ),
 
-        h("div", { style: { marginBottom: 14 } },
-          h("div", { style: { fontWeight: 600, fontSize: "0.85em", marginBottom: 6, color: "#c9d1d9" } }, "🗄 Vector Store"),
-          h("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "8px 12px" } },
+        renderSection("vectorStore", "Vector Store", "🗄",
+          h("div", null,
             renderNumber("Dimensions", "vector_store.DIMENSIONS", false, null, 128, 3072)
           )
         ),
 
         // Models subsection
-        h("div", { style: { marginTop: 16, marginBottom: 8, fontWeight: 600, fontSize: "0.9em", color: "#c9d1d9" } }, "🤖 Models"),
-        models.deriver ? renderModelCard("Deriver", "⚡", models.deriver) : null,
-        models.summary ? renderModelCard("Summary", "📝", models.summary) : null,
-        models.embedding ? renderModelCard("Embedding", "🔢", models.embedding) : null,
-        models.dream && models.dream.main ? renderModelCard("Dream (Main)", "💤", models.dream.main) : null,
-        models.dream && models.dream.deduction ? renderModelCard("Dream (Deduction)", "🔍", models.dream.deduction) : null,
-        models.dream && models.dream.induction ? renderModelCard("Dream (Induction)", "💡", models.dream.induction) : null,
-        h("div", { style: { marginTop: 8, marginBottom: 4, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Dialectic Levels"),
-        models.dialectic && models.dialectic.minimal ? renderModelCard("Minimal", "○", models.dialectic.minimal) : null,
-        models.dialectic && models.dialectic.low ? renderModelCard("Low", "◔", models.dialectic.low) : null,
-        models.dialectic && models.dialectic.medium ? renderModelCard("Medium", "◑", models.dialectic.medium) : null,
-        models.dialectic && models.dialectic.high ? renderModelCard("High", "◕", models.dialectic.high) : null,
-        models.dialectic && models.dialectic.max ? renderModelCard("Max", "●", models.dialectic.max) : null
+        renderSection("models", "Models", "🤖",
+          h("div", null,
+            models.deriver ? renderModelCard("Deriver", "⚡", models.deriver) : null,
+            models.summary ? renderModelCard("Summary", "📝", models.summary) : null,
+            models.embedding ? renderModelCard("Embedding", "🔢", models.embedding) : null,
+            models.dream && models.dream.main ? renderModelCard("Dream (Main)", "💤", models.dream.main) : null,
+            models.dream && models.dream.deduction ? renderModelCard("Dream (Deduction)", "🔍", models.dream.deduction) : null,
+            models.dream && models.dream.induction ? renderModelCard("Dream (Induction)", "💡", models.dream.induction) : null,
+            h("div", {style: {marginTop: 8, marginBottom: 4, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Dialectic Levels"),
+            models.dialectic && models.dialectic.minimal ? renderModelCard("Minimal", "○", models.dialectic.minimal) : null,
+            models.dialectic && models.dialectic.low ? renderModelCard("Low", "◔", models.dialectic.low) : null,
+            models.dialectic && models.dialectic.medium ? renderModelCard("Medium", "◑", models.dialectic.medium) : null,
+            models.dialectic && models.dialectic.high ? renderModelCard("High", "◕", models.dialectic.high) : null,
+            models.dialectic && models.dialectic.max ? renderModelCard("Max", "●", models.dialectic.max) : null
+          )
+        )
       ),
 
       // ── WORKSPACE OVERRIDES ──────────────────────────────────────────
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "🔧 Workspace Overrides"),
-        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } }, "Override global defaults. Greyed-out = using global default."),
-        h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 14 } },
-          saveMsg ? h("span", { style: { fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149" } }, saveMsg.text) : null,
-          h("button", { onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary }, saving ? "Saving…" : "💾 Save Workspace Overrides")
+      h("div", {style: S.section},
+        h("div", {style: S.sectionTitle}, "🔧 Workspace Overrides"),
+        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Override global defaults. Greyed-out = using global default."),
+        h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 14}},
+          saveMsg ? h("span", {style: {fontSize: "0.78em", color: saveMsg.type === "ok" ? "#3fb950" : "#f85149"}}, saveMsg.text) : null,
+          h("button", {onClick: handleSaveWorkspace, disabled: saving, style: S.btnPrimary}, saving ? "Saving…" : "💾 Save Workspace Overrides")
         ),
-
         renderToggle("Enable Reasoning", "reasoning.enabled", true, "Override global deriver setting"),
         renderTextarea("Custom Instructions", "reasoning.custom_instructions", "Optional custom instructions"),
-
-        h("div", { style: { marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Peer Cards"),
+        h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Peer Cards"),
         renderToggle("Use Peer Cards", "peer_card.use", true, "Override global peer card setting"),
         renderToggle("Create Peer Cards", "peer_card.create", true, "Override global peer card creation"),
-
-        h("div", { style: { marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Summaries"),
+        h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Summaries"),
         renderToggle("Enable Summaries", "summary.enabled", true, "Override global summary setting"),
         renderNumber("Messages per Short", "summary.messages_per_short_summary", true, "Min 10", 10, 500),
         renderNumber("Messages per Long", "summary.messages_per_long_summary", true, "Min 20", 20, 1000),
-
-        h("div", { style: { marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e" } }, "Dream"),
+        h("div", {style: {marginTop: 12, marginBottom: 6, fontWeight: 600, fontSize: "0.82em", color: "#8b949e"}}, "Dream"),
         renderToggle("Enable Dream", "dream.enabled", true, "Override global dream setting")
+      ),
+
+      // ── IMPORT FROM HERMES ───────────────────────────────────────────
+      h("div", {style: S.section},
+        h("div", {style: {display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}},
+          h("div", {style: S.sectionTitle, style: Object.assign({}, S.sectionTitle, {marginBottom: 0})}, "📥 Import from Hermes"),
+          impResult && impResult.summary
+            ? h("span", {style: {fontSize: "0.78em", color: impResult.success ? "#3fb950" : "#f85149"}},
+                impResult.dry_run ? "Dry run" : "Done",
+                " · " + impResult.summary.imported + " imported, " + impResult.summary.errors + " errors"
+              )
+            : null
+        ),
+
+        // Peer mapping
+        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 12}}, "Map Hermes conversation roles to Honcho peers."),
+        h("div", {style: {display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12}},
+          h("div", null,
+            h("label", {style: {fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4}}, "User role →"),
+            h("select", {value: impUserPeer, onChange: function (e) { setUserPeer(e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
+              h("option", {value: ""}, "Select peer…"),
+              impPeerItems.map(function (p) { return h("option", {key: p.id, value: p.id}, p.name || p.id); })
+            )
+          ),
+          h("div", null,
+            h("label", {style: {fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4}}, "Assistant role →"),
+            h("select", {value: impAsstPeer, onChange: function (e) { setAsstPeer(e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
+              h("option", {value: ""}, "Select peer…"),
+              impPeerItems.map(function (p) { return h("option", {key: p.id, value: p.id}, p.name || p.id); })
+            )
+          )
+        ),
+
+        // Session list
+        h("div", {style: {display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap"}},
+          h("input", {type: "text", placeholder: "Filter sessions…", value: impFilter, onChange: function (e) { setImpFilter(e.target.value); }, style: Object.assign({}, S.input, {flex: 1, minWidth: 200})}),
+          h("button", {onClick: impSelectAll, style: S.btn}, "Select All"),
+          h("button", {onClick: impDeselectAll, style: S.btn}, "Select None"),
+          h("label", {style: {display: "flex", alignItems: "center", gap: 4, fontSize: "0.78em", color: "#8b949e"}},
+            h("input", {type: "checkbox", checked: impDryRun, onChange: function (e) { setImpDryRun(e.target.checked); }}),
+            "Dry run"
+          )
+        ),
+
+        h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 8}},
+          impSelected.length + " selected" + (impTotalMessages > 0 ? " · ~" + impTotalMessages + " messages" : "") +
+          (impSessions ? " · " + impSessions.imported_count + " already imported" : "")
+        ),
+
+        (impSelected.length > 5 || impTotalMessages > 500)
+          ? h("div", {style: {padding: "8px 12px", background: "#3f2c00", border: "1px solid #d29922", borderRadius: 6, marginBottom: 12, fontSize: "0.78em", color: "#d29922"}},
+              "⚠️ Large import (" + impSelected.length + " sessions, ~" + impTotalMessages + " messages). This may take a while.")
+          : null,
+
+        h("div", {style: {maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6}},
+          impFilteredSessions().map(function (s) {
+            var isSel = impSelected.indexOf(s.id) >= 0;
+            return h("div", {key: s.id, style: {display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: "1px solid #21262d", background: isSel ? "#161b22" : "transparent", opacity: s.already_imported ? 0.6 : 1}},
+              h("input", {type: "checkbox", checked: isSel, onChange: function () { impToggleSession(s.id); }}),
+              h("div", {style: {flex: 1, minWidth: 0}},
+                h("div", {style: {fontSize: "0.82em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"}}, s.title || s.id),
+                h("div", {style: {fontSize: "0.7em", color: "#8b949e", marginTop: 2}}, impFormatDate(s.started_at) + " · " + s.source + " · " + s.user_messages + " user / " + s.assistant_messages + " asst")
+              ),
+              s.already_imported
+                ? h("span", {style: {fontSize: "0.68em", color: "#3fb950", padding: "2px 6px", background: "#0d1117", borderRadius: 4, border: "1px solid #238636", whiteSpace: "nowrap"}}, "✓ imported")
+                : null
+            );
+          })
+        ),
+
+        // Import button
+        h("div", {style: {marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}},
+          impResult && impResult.success && !impDryRun
+            ? h("button", {onClick: function () { loadImportSessions(); setImpResult(null); }, style: S.btnPrimary}, "🔄 Refresh List")
+            : h("button", {onClick: impHandleImport, disabled: impImporting || impSelected.length === 0 || !impUserPeer || !impAsstPeer, style: (impSelected.length > 0 && impUserPeer && impAsstPeer) ? S.btnPrimary : S.btn},
+                impImporting ? "Importing…" : (impDryRun ? "🔍 Dry Run (" + impSelected.length + ")" : "📥 Import " + impSelected.length + " Session" + (impSelected.length !== 1 ? "s" : ""))
+              ),
+          impImporting ? h("span", {style: {fontSize: "0.75em", color: "#8b949e"}}, "Processing…") : null
+        ),
+
+        // Import results
+        impResult && impResult.results
+          ? h("div", {style: {marginTop: 16}},
+              h("div", {style: S.sectionTitle}, impResult.dry_run ? "Dry Run Results" : "Import Results"),
+              h("div", {style: {maxHeight: 300, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6}},
+                impResult.results.map(function (r, i) {
+                  var color = r.status === "imported" ? "#3fb950" : r.status === "error" ? "#f85149" : r.status === "dry_run" ? "#58a6ff" : "#8b949e";
+                  var icon = r.status === "imported" ? "✓" : r.status === "error" ? "✗" : r.status === "dry_run" ? "🔍" : "○";
+                  return h("div", {key: i, style: {padding: "6px 12px", borderBottom: "1px solid #21262d", fontSize: "0.78em"}},
+                    h("span", {style: {color: color, marginRight: 6}}, icon),
+                    h("span", null, r.session_id.slice(0, 20)),
+                    r.honcho_session ? h("span", {style: {color: "#8b949e", marginLeft: 6}}, "→ " + r.honcho_session) : null,
+                    r.messages_imported != null ? h("span", {style: {color: "#8b949e", marginLeft: 6}}, "(" + r.messages_imported + " msgs)") : null,
+                    r.reason ? h("span", {style: {color: "#f85149", marginLeft: 6}}, "— " + r.reason) : null
+                  );
+                })
+              )
+            )
+          : null
       )
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Import Tab — import Hermes sessions into Honcho
+  // Main App — tab router
   // ---------------------------------------------------------------------------
-
-  function ImportTab() {
-    var _u = useState(null), sessions = _u[0], setSessions = _u[1];
-    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
-    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
-    var _u4 = useState([]), selected = _u4[0], setSelected = _u4[1];
-    var _u5 = useState(null), peers = _u5[0], setPeers = _u5[1];
-    var _u6 = useState(""), userPeer = _u6[0], setUserPeer = _u6[1];
-    var _u7 = useState(""), assistantPeer = _u7[0], setAssistantPeer = _u7[1];
-    var _u8 = useState(""), filterText = _u8[0], setFilterText = _u8[1];
-    var _u9 = useState(false), dryRun = _u9[0], setDryRun = _u9[1];
-    var _u10 = useState(false), importing = _u10[0], setImporting = _u10[1];
-    var _u11 = useState(null), importResult = _u11[0], setImportResult = _u11[1];
-    var _u12 = useState(false), confirmImport = _u12[0], setConfirmImport = _u12[1];
-
-    function loadSessions() {
-      setLoading(true); setError(null);
-      fetchJSON(API + "/hermes-sessions")
-        .then(function (d) {
-          setSessions(d);
-          // Default: select only non-imported sessions
-          var toSelect = (d.sessions || []).filter(function (s) { return !s.already_imported; }).map(function (s) { return s.id; });
-          setSelected(toSelect);
-        })
-        .catch(function (e) { setError(e.message); })
-        .finally(function () { setLoading(false); });
-    }
-
-    function loadPeers() {
-      fetchJSON(API + "/peers")
-        .then(function (d) { setPeers(d); })
-        .catch(function () { /* best-effort */ });
-    }
-
-    useEffect(function () { loadSessions(); loadPeers(); }, []);
-
-    function toggleSession(id) {
-      var idx = selected.indexOf(id);
-      if (idx >= 0) {
-        selected.splice(idx, 1);
-      } else {
-        selected.push(id);
-      }
-      setSelected(selected.slice());
-    }
-
-    function selectAll() {
-      var ids = filteredSessions().map(function (s) { return s.id; });
-      setSelected(ids);
-    }
-
-    function deselectAll() {
-      setSelected([]);
-    }
-
-    function filteredSessions() {
-      if (!sessions || !sessions.sessions) return [];
-      if (!filterText.trim()) return sessions.sessions;
-      var q = filterText.toLowerCase();
-      return sessions.sessions.filter(function (s) {
-        return (s.title || s.id).toLowerCase().indexOf(q) >= 0;
-      });
-    }
-
-    function handleImport() {
-      if (!userPeer || !assistantPeer) {
-        setError("Please select both User and Assistant peers");
-        return;
-      }
-      if (selected.length === 0) {
-        setError("No sessions selected");
-        return;
-      }
-      setImportResult(null);
-      setImporting(true);
-      fetch(API + "/import-sessions", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          session_ids: selected,
-          user_peer_id: userPeer,
-          assistant_peer_id: assistantPeer,
-          dry_run: dryRun,
-        }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { setImportResult(d); })
-        .catch(function (e) { setError(e.message); })
-        .finally(function () { setImporting(false); });
-    }
-
-    function formatDate(ts) {
-      if (!ts) return "unknown";
-      var d = new Date(ts * 1000);
-      return d.toLocaleDateString() + " " + d.toLocaleTimeString();
-    }
-
-    if (loading && !sessions) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading sessions…");
-    if (error && !sessions) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadSessions },
-      h("div", null, "⚠️ " + error),
-      h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry.")
-    );
-
-    var peerItems = (peers && peers.peers) || [];
-    var totalMessages = selected.reduce(function (acc, sid) {
-      var s = (sessions.sessions || []).find(function (x) { return x.id === sid; });
-      return acc + (s ? s.total_importable : 0);
-    }, 0);
-
-    return h("div", null,
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-        h("h2", { style: { margin: 0 } }, "📥 Import from Hermes"),
-        importResult && importResult.summary
-          ? h("span", { style: { fontSize: "0.78em", color: importResult.success ? "#3fb950" : "#f85149" } },
-              importResult.dry_run ? "Dry run" : "Done",
-              " · " + importResult.summary.imported + " imported, " + importResult.summary.errors + " errors"
-            )
-          : null
-      ),
-
-      // ── PEER MAPPING ─────────────────────────────────────────────────
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "👥 Peer Mapping"),
-        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } },
-          "Map Hermes conversation roles to Honcho peers. Each session becomes a new Honcho session."
-        ),
-        h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12 } },
-          h("div", null,
-            h("label", { style: { fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4 } }, "User role →"),
-            h("select", { value: userPeer, onChange: function (e) { setUserPeer(e.target.value); }, style: Object.assign({}, S.input, { minWidth: 180 }) },
-              h("option", { value: "" }, "Select peer…"),
-              peerItems.map(function (p) { return h("option", { key: p.id, value: p.id }, p.name || p.id); })
-            )
-          ),
-          h("div", null,
-            h("label", { style: { fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4 } }, "Assistant role →"),
-            h("select", { value: assistantPeer, onChange: function (e) { setAssistantPeer(e.target.value); }, style: Object.assign({}, S.input, { minWidth: 180 }) },
-              h("option", { value: "" }, "Select peer…"),
-              peerItems.map(function (p) { return h("option", { key: p.id, value: p.id }, p.name || p.id); })
-            )
-          )
-        )
-      ),
-
-      // ── SESSION LIST ─────────────────────────────────────────────────
-      h("div", { style: S.section },
-        h("div", { style: S.sectionTitle }, "📋 Hermes Sessions"),
-        h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" } },
-          h("input", {
-            type: "text", placeholder: "Filter sessions…", value: filterText,
-            onChange: function (e) { setFilterText(e.target.value); },
-            style: Object.assign({}, S.input, { flex: 1, minWidth: 200 }),
-          }),
-          h("button", { onClick: selectAll, style: S.btn }, "Select All"),
-          h("button", { onClick: deselectAll, style: S.btn }, "Select None"),
-          h("label", { style: { display: "flex", alignItems: "center", gap: 4, fontSize: "0.78em", color: "#8b949e" } },
-            h("input", { type: "checkbox", checked: dryRun, onChange: function (e) { setDryRun(e.target.checked); } }),
-            "Dry run"
-          )
-        ),
-
-        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 8 } },
-          selected.length + " selected" + (totalMessages > 0 ? " · ~" + totalMessages + " messages" : "") +
-          (sessions ? " · " + sessions.imported_count + " already imported" : "")
-        ),
-
-        // Warning for large imports
-        selected.length > 5 || totalMessages > 500
-          ? h("div", { style: { padding: "8px 12px", background: "#3f2c00", border: "1px solid #d29922", borderRadius: 6, marginBottom: 12, fontSize: "0.78em", color: "#d29922" } },
-              "⚠️ Large import (" + selected.length + " sessions, ~" + totalMessages + " messages). This may take a while."
-            )
-          : null,
-
-        // Session list
-        h("div", { style: { maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6 } },
-          filteredSessions().map(function (s) {
-            var isSelected = selected.indexOf(s.id) >= 0;
-            return h("div", {
-              key: s.id,
-              style: {
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 12px", borderBottom: "1px solid #21262d",
-                background: isSelected ? "#161b22" : "transparent",
-                opacity: s.already_imported ? 0.6 : 1,
-              }
-            },
-              h("input", {
-                type: "checkbox", checked: isSelected,
-                onChange: function () { toggleSession(s.id); },
-              }),
-              h("div", { style: { flex: 1, minWidth: 0 } },
-                h("div", { style: { fontSize: "0.82em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
-                  s.title || s.id
-                ),
-                h("div", { style: { fontSize: "0.7em", color: "#8b949e", marginTop: 2 } },
-                  formatDate(s.started_at) + " · " + s.source + " · " + s.user_messages + " user / " + s.assistant_messages + " asst"
-                )
-              ),
-              s.already_imported
-                ? h("span", { style: { fontSize: "0.68em", color: "#3fb950", padding: "2px 6px", background: "#0d1117", borderRadius: 4, border: "1px solid #238636", whiteSpace: "nowrap" } }, "✓ imported")
-                : null
-            );
-          })
-        )
-      ),
-
-      // ── IMPORT BUTTON ─────────────────────────────────────────────────
-      h("div", { style: { marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
-        importResult && importResult.success && !dryRun
-          ? h("button", { onClick: function () { loadSessions(); setImportResult(null); }, style: S.btnPrimary },
-              "🔄 Refresh List"
-            )
-          : h("button", {
-              onClick: handleImport,
-              disabled: importing || selected.length === 0 || !userPeer || !assistantPeer,
-              style: (selected.length > 0 && userPeer && assistantPeer) ? S.btnPrimary : S.btn,
-            },
-              importing ? "Importing…" : (dryRun ? "🔍 Dry Run (" + selected.length + ")" : "📥 Import " + selected.length + " Session" + (selected.length !== 1 ? "s" : ""))
-            ),
-        importing ? h("span", { style: { fontSize: "0.75em", color: "#8b949e" } }, "Processing…") : null
-      ),
-
-      // ── IMPORT RESULTS ───────────────────────────────────────────────
-      importResult && importResult.results
-        ? h("div", { style: { marginTop: 16 } },
-            h("div", { style: S.sectionTitle }, importResult.dry_run ? "Dry Run Results" : "Import Results"),
-            h("div", { style: { maxHeight: 300, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6 } },
-              importResult.results.map(function (r, i) {
-                var color = r.status === "imported" ? "#3fb950" : r.status === "error" ? "#f85149" : r.status === "dry_run" ? "#58a6ff" : "#8b949e";
-                var icon = r.status === "imported" ? "✓" : r.status === "error" ? "✗" : r.status === "dry_run" ? "🔍" : "○";
-                return h("div", { key: i, style: { padding: "6px 12px", borderBottom: "1px solid #21262d", fontSize: "0.78em" } },
-                  h("span", { style: { color: color, marginRight: 6 } }, icon),
-                  h("span", null, r.session_id.slice(0, 20)),
-                  r.honcho_session ? h("span", { style: { color: "#8b949e", marginLeft: 6 } }, "→ " + r.honcho_session) : null,
-                  r.messages_imported != null ? h("span", { style: { color: "#8b949e", marginLeft: 6 } }, "(" + r.messages_imported + " msgs)") : null,
-                  r.reason ? h("span", { style: { color: "#f85149", marginLeft: 6 } }, "— " + r.reason) : null
-                );
-              })
-            )
-          )
-        : null
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Main App — tab router
   // ---------------------------------------------------------------------------
@@ -2040,12 +1980,9 @@
       { key: "peers", label: "Peers" },
       { key: "sessions", label: "Sessions" },
       { key: "conclusions", label: "Conclusions" },
-      { key: "search", label: "Search" },
-      { key: "analytics", label: "Analytics" },
       { key: "status", label: "Status" },
       { key: "dreams", label: "Dreams" },
       { key: "config", label: "Config" },
-      { key: "import", label: "Import" },
     ];
 
     var content;
@@ -2053,12 +1990,9 @@
     else if (tab === "peers") content = h(PeersTab);
     else if (tab === "sessions") content = h(SessionsTab);
     else if (tab === "conclusions") content = h(ConclusionsTab);
-    else if (tab === "search") content = h(SearchTab);
-    else if (tab === "analytics") content = h(AnalyticsTab);
     else if (tab === "status") content = h(StatusTab);
     else if (tab === "dreams") content = h(DreamsTab);
     else if (tab === "config") content = h(ConfigTab);
-    else if (tab === "import") content = h(ImportTab);
 
     return h("div", { style: S.page },
       h("div", { style: S.header },
