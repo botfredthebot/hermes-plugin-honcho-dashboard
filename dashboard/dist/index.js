@@ -1,7 +1,7 @@
 /**
  * Honcho Dashboard — Hermes Dashboard Plugin
  *
- * Tabs: Overview, Peers, Sessions, Conclusions, Search, Analytics, Status.
+ * Tabs: Overview, Peers, Sessions, Conclusions, Search, Analytics, Status, Config, Import.
  * Features: sidebar nav, full-width list layouts, delete buttons on right,
  *   peer filter dropdown on conclusions, DB status on Status tab.
  */
@@ -1347,6 +1347,253 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Import Tab — import Hermes sessions into Honcho
+  // ---------------------------------------------------------------------------
+
+  function ImportTab() {
+    var _u = useState(null), sessions = _u[0], setSessions = _u[1];
+    var _u2 = useState(true), loading = _u2[0], setLoading = _u2[1];
+    var _u3 = useState(null), error = _u3[0], setError = _u3[1];
+    var _u4 = useState([]), selected = _u4[0], setSelected = _u4[1];
+    var _u5 = useState(null), peers = _u5[0], setPeers = _u5[1];
+    var _u6 = useState(""), userPeer = _u6[0], setUserPeer = _u6[1];
+    var _u7 = useState(""), assistantPeer = _u7[0], setAssistantPeer = _u7[1];
+    var _u8 = useState(""), filterText = _u8[0], setFilterText = _u8[1];
+    var _u9 = useState(false), dryRun = _u9[0], setDryRun = _u9[1];
+    var _u10 = useState(false), importing = _u10[0], setImporting = _u10[1];
+    var _u11 = useState(null), importResult = _u11[0], setImportResult = _u11[1];
+    var _u12 = useState(false), confirmImport = _u12[0], setConfirmImport = _u12[1];
+
+    function loadSessions() {
+      setLoading(true); setError(null);
+      fetchJSON(API + "/hermes-sessions")
+        .then(function (d) {
+          setSessions(d);
+          // Default: select only non-imported sessions
+          var toSelect = (d.sessions || []).filter(function (s) { return !s.already_imported; }).map(function (s) { return s.id; });
+          setSelected(toSelect);
+        })
+        .catch(function (e) { setError(e.message); })
+        .finally(function () { setLoading(false); });
+    }
+
+    function loadPeers() {
+      fetchJSON(API + "/peers")
+        .then(function (d) { setPeers(d); })
+        .catch(function () { /* best-effort */ });
+    }
+
+    useEffect(function () { loadSessions(); loadPeers(); }, []);
+
+    function toggleSession(id) {
+      var idx = selected.indexOf(id);
+      if (idx >= 0) {
+        selected.splice(idx, 1);
+      } else {
+        selected.push(id);
+      }
+      setSelected(selected.slice());
+    }
+
+    function selectAll() {
+      var ids = filteredSessions().map(function (s) { return s.id; });
+      setSelected(ids);
+    }
+
+    function deselectAll() {
+      setSelected([]);
+    }
+
+    function filteredSessions() {
+      if (!sessions || !sessions.sessions) return [];
+      if (!filterText.trim()) return sessions.sessions;
+      var q = filterText.toLowerCase();
+      return sessions.sessions.filter(function (s) {
+        return (s.title || s.id).toLowerCase().indexOf(q) >= 0;
+      });
+    }
+
+    function handleImport() {
+      if (!userPeer || !assistantPeer) {
+        setError("Please select both User and Assistant peers");
+        return;
+      }
+      if (selected.length === 0) {
+        setError("No sessions selected");
+        return;
+      }
+      setImportResult(null);
+      setImporting(true);
+      fetch(API + "/import-sessions", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          session_ids: selected,
+          user_peer_id: userPeer,
+          assistant_peer_id: assistantPeer,
+          dry_run: dryRun,
+        }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { setImportResult(d); })
+        .catch(function (e) { setError(e.message); })
+        .finally(function () { setImporting(false); });
+    }
+
+    function formatDate(ts) {
+      if (!ts) return "unknown";
+      var d = new Date(ts * 1000);
+      return d.toLocaleDateString() + " " + d.toLocaleTimeString();
+    }
+
+    if (loading && !sessions) return h("div", { style: { padding: 40, color: "#8b949e" } }, "Loading sessions…");
+    if (error && !sessions) return h("div", { style: { padding: 40, color: "#f85149", cursor: "pointer" }, onClick: loadSessions },
+      h("div", null, "⚠️ " + error),
+      h("div", { style: { fontSize: "0.75em", marginTop: 8, color: "#8b949e" } }, "Click to retry.")
+    );
+
+    var peerItems = (peers && peers.peers) || [];
+    var totalMessages = selected.reduce(function (acc, sid) {
+      var s = (sessions.sessions || []).find(function (x) { return x.id === sid; });
+      return acc + (s ? s.total_importable : 0);
+    }, 0);
+
+    return h("div", null,
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+        h("h2", { style: { margin: 0 } }, "📥 Import from Hermes"),
+        importResult && importResult.summary
+          ? h("span", { style: { fontSize: "0.78em", color: importResult.success ? "#3fb950" : "#f85149" } },
+              importResult.dry_run ? "Dry run" : "Done",
+              " · " + importResult.summary.imported + " imported, " + importResult.summary.errors + " errors"
+            )
+          : null
+      ),
+
+      // ── PEER MAPPING ─────────────────────────────────────────────────
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "👥 Peer Mapping"),
+        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 12 } },
+          "Map Hermes conversation roles to Honcho peers. Each session becomes a new Honcho session."
+        ),
+        h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12 } },
+          h("div", null,
+            h("label", { style: { fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4 } }, "User role →"),
+            h("select", { value: userPeer, onChange: function (e) { setUserPeer(e.target.value); }, style: Object.assign({}, S.input, { minWidth: 180 }) },
+              h("option", { value: "" }, "Select peer…"),
+              peerItems.map(function (p) { return h("option", { key: p.id, value: p.id }, p.name || p.id); })
+            )
+          ),
+          h("div", null,
+            h("label", { style: { fontSize: "0.8em", color: "#8b949e", display: "block", marginBottom: 4 } }, "Assistant role →"),
+            h("select", { value: assistantPeer, onChange: function (e) { setAssistantPeer(e.target.value); }, style: Object.assign({}, S.input, { minWidth: 180 }) },
+              h("option", { value: "" }, "Select peer…"),
+              peerItems.map(function (p) { return h("option", { key: p.id, value: p.id }, p.name || p.id); })
+            )
+          )
+        )
+      ),
+
+      // ── SESSION LIST ─────────────────────────────────────────────────
+      h("div", { style: S.section },
+        h("div", { style: S.sectionTitle }, "📋 Hermes Sessions"),
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" } },
+          h("input", {
+            type: "text", placeholder: "Filter sessions…", value: filterText,
+            onChange: function (e) { setFilterText(e.target.value); },
+            style: Object.assign({}, S.input, { flex: 1, minWidth: 200 }),
+          }),
+          h("button", { onClick: selectAll, style: S.btn }, "Select All"),
+          h("button", { onClick: deselectAll, style: S.btn }, "Deselect None"),
+          h("label", { style: { display: "flex", alignItems: "center", gap: 4, fontSize: "0.78em", color: "#8b949e" } },
+            h("input", { type: "checkbox", checked: dryRun, onChange: function (e) { setDryRun(e.target.checked); } }),
+            "Dry run"
+          )
+        ),
+
+        h("div", { style: { fontSize: "0.75em", color: "#8b949e", marginBottom: 8 } },
+          selected.length + " selected" + (totalMessages > 0 ? " · ~" + totalMessages + " messages" : "") +
+          (sessions ? " · " + sessions.imported_count + " already imported" : "")
+        ),
+
+        // Warning for large imports
+        selected.length > 5 || totalMessages > 500
+          ? h("div", { style: { padding: "8px 12px", background: "#3f2c00", border: "1px solid #d29922", borderRadius: 6, marginBottom: 12, fontSize: "0.78em", color: "#d29922" } },
+              "⚠️ Large import (" + selected.length + " sessions, ~" + totalMessages + " messages). This may take a while."
+            )
+          : null,
+
+        // Session list
+        h("div", { style: { maxHeight: 400, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6 } },
+          filteredSessions().map(function (s) {
+            var isSelected = selected.indexOf(s.id) >= 0;
+            return h("div", {
+              key: s.id,
+              style: {
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 12px", borderBottom: "1px solid #21262d",
+                background: isSelected ? "#161b22" : "transparent",
+                opacity: s.already_imported ? 0.6 : 1,
+              }
+            },
+              h("input", {
+                type: "checkbox", checked: isSelected,
+                onChange: function () { toggleSession(s.id); },
+              }),
+              h("div", { style: { flex: 1, minWidth: 0 } },
+                h("div", { style: { fontSize: "0.82em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
+                  s.title || s.id
+                ),
+                h("div", { style: { fontSize: "0.7em", color: "#8b949e", marginTop: 2 } },
+                  formatDate(s.started_at) + " · " + s.source + " · " + s.user_messages + " user / " + s.assistant_messages + " asst"
+                )
+              ),
+              s.already_imported
+                ? h("span", { style: { fontSize: "0.68em", color: "#3fb950", padding: "2px 6px", background: "#0d1117", borderRadius: 4, border: "1px solid #238636", whiteSpace: "nowrap" } }, "✓ imported")
+                : null
+            );
+          })
+        )
+      ),
+
+      // ── IMPORT BUTTON ─────────────────────────────────────────────────
+      h("div", { style: { marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+        importResult && importResult.success && !dryRun
+          ? h("button", { onClick: function () { loadSessions(); setImportResult(null); }, style: S.btnPrimary },
+              "🔄 Refresh List"
+            )
+          : h("button", {
+              onClick: handleImport,
+              disabled: importing || selected.length === 0 || !userPeer || !assistantPeer,
+              style: (selected.length > 0 && userPeer && assistantPeer) ? S.btnPrimary : S.btn,
+            },
+              importing ? "Importing…" : (dryRun ? "🔍 Dry Run (" + selected.length + ")" : "📥 Import " + selected.length + " Session" + (selected.length !== 1 ? "s" : ""))
+            ),
+        importing ? h("span", { style: { fontSize: "0.75em", color: "#8b949e" } }, "Processing…") : null
+      ),
+
+      // ── IMPORT RESULTS ───────────────────────────────────────────────
+      importResult && importResult.results
+        ? h("div", { style: { marginTop: 16 } },
+            h("div", { style: S.sectionTitle }, importResult.dry_run ? "Dry Run Results" : "Import Results"),
+            h("div", { style: { maxHeight: 300, overflowY: "auto", border: "1px solid #21262d", borderRadius: 6 } },
+              importResult.results.map(function (r, i) {
+                var color = r.status === "imported" ? "#3fb950" : r.status === "error" ? "#f85149" : r.status === "dry_run" ? "#58a6ff" : "#8b949e";
+                var icon = r.status === "imported" ? "✓" : r.status === "error" ? "✗" : r.status === "dry_run" ? "🔍" : "○";
+                return h("div", { key: i, style: { padding: "6px 12px", borderBottom: "1px solid #21262d", fontSize: "0.78em" } },
+                  h("span", { style: { color: color, marginRight: 6 } }, icon),
+                  h("span", null, r.session_id.slice(0, 20)),
+                  r.honcho_session ? h("span", { style: { color: "#8b949e", marginLeft: 6 } }, "→ " + r.honcho_session) : null,
+                  r.messages_imported != null ? h("span", { style: { color: "#8b949e", marginLeft: 6 } }, "(" + r.messages_imported + " msgs)") : null,
+                  r.reason ? h("span", { style: { color: "#f85149", marginLeft: 6 } }, "— " + r.reason) : null
+                );
+              })
+            )
+          )
+        : null
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Main App — tab router
   // ---------------------------------------------------------------------------
 
@@ -1362,6 +1609,7 @@
       { key: "analytics", label: "Analytics" },
       { key: "status", label: "Status" },
       { key: "config", label: "Config" },
+      { key: "import", label: "Import" },
     ];
 
     var content;
@@ -1373,6 +1621,7 @@
     else if (tab === "analytics") content = h(AnalyticsTab);
     else if (tab === "status") content = h(StatusTab);
     else if (tab === "config") content = h(ConfigTab);
+    else if (tab === "import") content = h(ImportTab);
 
     return h("div", { style: S.page },
       h("div", { style: S.header },

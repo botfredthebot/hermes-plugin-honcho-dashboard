@@ -928,3 +928,213 @@ async def update_global_config(body: dict):
         raise HTTPException(status_code=502, detail=f"Config saved but restart failed: {result.stderr[:500]}")
 
     return {"success": True, "message": "Global config updated and service restarted."}
+
+
+# ---------------------------------------------------------------------------
+# Hermes Session Import — list and import Hermes sessions into Honcho
+# ---------------------------------------------------------------------------
+
+def _read_hermes_sessions() -> list[dict]:
+    """Read all sessions from Hermes SQLite DB."""
+    import sqlite3
+
+    db_path = get_hermes_db_path()
+    if not db_path.exists():
+        return []
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT id, title, source, message_count, started_at, ended_at "
+            "FROM sessions ORDER BY started_at DESC"
+        )
+        results = []
+        for r in cursor.fetchall():
+            results.append({k: r[k] for k in r.keys()})
+        conn.close()
+        return results
+    except Exception as e:
+        logger.error("[Honcho Dashboard] Hermes DB read error: %s", e)
+        return []
+
+
+def _read_hermes_session_messages(session_id: str) -> list[dict]:
+    """Read all user/assistant messages from a Hermes session."""
+    import sqlite3
+
+    db_path = get_hermes_db_path()
+    if not db_path.exists():
+        return []
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT role, content, timestamp FROM messages "
+            "WHERE session_id = ? AND role IN ('user', 'assistant') "
+            "ORDER BY rowid ASC",
+            (session_id,),
+        )
+        results = []
+        for r in cursor.fetchall():
+            results.append({k: r[k] for k in r.keys()})
+        conn.close()
+        return results
+    except Exception as e:
+        logger.error("[Honcho Dashboard] Hermes DB read error: %s", e)
+        return []
+
+
+def _get_imported_sessions() -> set[str]:
+    """Get set of Hermes session IDs already imported into Honcho."""
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT name FROM sessions WHERE workspace_name = %s AND name LIKE %s",
+            (WORKSPACE, "%-import"),
+        )
+        imported = {r[0].replace("-import", "") for r in cur.fetchall()}
+        cur.close()
+        conn.close()
+        return imported
+    except Exception:
+        return set()
+
+
+@router.get("/hermes-sessions")
+async def list_hermes_sessions():
+    """
+    List all Hermes sessions available for import.
+    Includes metadata about whether each session has already been imported.
+    """
+    sessions = _read_hermes_sessions()
+    imported = _get_imported_sessions()
+
+    # Enrich with import status and message breakdown
+    for s in sessions:
+        s["already_imported"] = s["id"] in imported
+        # Get user/assistant message counts
+        msgs = _read_hermes_session_messages(s["id"])
+        s["user_messages"] = sum(1 for m in msgs if m["role"] == "user")
+        s["assistant_messages"] = sum(1 for m in msgs if m["role"] == "assistant")
+        s["total_importable"] = s["user_messages"] + s["assistant_messages"]
+
+    return {"sessions": sessions, "total": len(sessions), "imported_count": len(imported)}
+
+
+@router.post("/import-sessions")
+async def import_sessions(body: dict):
+    """
+    Import selected Hermes sessions into Honcho.
+
+    Body:
+    {
+        "session_ids": ["session-id-1", "session-id-2"],
+        "user_peer_id": "peer-id-for-user",
+        "assistant_peer_id": "peer-id-for-assistant",
+        "dry_run": false
+    }
+    """
+    session_ids = body.get("session_ids", [])
+    user_peer_id = body.get("user_peer_id", "").strip()
+    assistant_peer_id = body.get("assistant_peer_id", "").strip()
+    dry_run = body.get("dry_run", False)
+
+    if not session_ids:
+        raise HTTPException(status_code=400, detail="No session_ids provided")
+    if not user_peer_id:
+        raise HTTPException(status_code=400, detail="user_peer_id is required")
+    if not assistant_peer_id:
+        raise HTTPException(status_code=400, detail="assistant_peer_id is required")
+
+    results = []
+    for sid in session_ids:
+        session_msgs = _read_hermes_session_messages(sid)
+        if not session_msgs:
+            results.append({
+                "session_id": sid,
+                "status": "skipped",
+                "reason": "No user/assistant messages found",
+            })
+            continue
+
+        # Build Honcho messages
+        honcho_messages = []
+        for msg in session_msgs:
+            peer_id = user_peer_id if msg["role"] == "user" else assistant_peer_id
+            honcho_messages.append({
+                "content": msg["content"],
+                "peer_id": peer_id,
+            })
+
+        if dry_run:
+            results.append({
+                "session_id": sid,
+                "status": "dry_run",
+                "message_count": len(honcho_messages),
+                "user_messages": sum(1 for m in session_msgs if m["role"] == "user"),
+                "assistant_messages": sum(1 for m in session_msgs if m["role"] == "assistant"),
+            })
+            continue
+
+        # Get or create Honcho session
+        # Use Hermes session title + "-import" as Honcho session name
+        hermes_sessions = _read_hermes_sessions()
+        session_title = next(
+            (s["title"] for s in hermes_sessions if s["id"] == sid), sid
+        )
+        honcho_session_name = f"{session_title}-import" if session_title else f"{sid}-import"
+
+        try:
+            # Create/get the session in Honcho
+            honcho_post(
+                f"/v3/workspaces/{WORKSPACE}/sessions",
+                {"id": honcho_session_name, "metadata": {"source": "hermes-import", "hermes_session_id": sid}},
+            )
+
+            # Add messages in batches of 50
+            batch_size = 50
+            total_added = 0
+            for i in range(0, len(honcho_messages), batch_size):
+                batch = honcho_messages[i:i + batch_size]
+                honcho_post(
+                    f"/v3/workspaces/{WORKSPACE}/sessions/{honcho_session_name}/messages",
+                    {"messages": batch},
+                )
+                total_added += len(batch)
+
+            results.append({
+                "session_id": sid,
+                "status": "imported",
+                "honcho_session": honcho_session_name,
+                "messages_imported": total_added,
+            })
+        except HTTPException as e:
+            results.append({
+                "session_id": sid,
+                "status": "error",
+                "reason": e.detail,
+            })
+        except Exception as e:
+            results.append({
+                "session_id": sid,
+                "status": "error",
+                "reason": str(e),
+            })
+
+    imported_count = sum(1 for r in results if r["status"] == "imported")
+    error_count = sum(1 for r in results if r["status"] == "error")
+
+    return {
+        "success": error_count == 0,
+        "dry_run": dry_run,
+        "results": results,
+        "summary": {
+            "total": len(session_ids),
+            "imported": imported_count,
+            "errors": error_count,
+            "skipped": len(session_ids) - imported_count - error_count,
+        },
+    }
