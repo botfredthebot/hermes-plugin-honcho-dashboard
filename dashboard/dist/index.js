@@ -1030,11 +1030,26 @@
       }},
         h("span", { style: { fontSize: "0.8rem", color: "#8b949e" } },
           "Threshold: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.DOCUMENT_THRESHOLD) || "?"),
-          " docs · Min interval: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.MIN_HOURS_BETWEEN_DREAMS) || "?", "h"),
-          " · Idle timeout: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.IDLE_TIMEOUT_MINUTES) || "?", "m"),
-          " · Types: ", h("strong", { style: { color: "#e6edf3" } }, ((config && config.ENABLED_TYPES) || []).join(", ")),
+          " docs · Min interval: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.MIN_HOURS_BETWEEN_DREAMS) || "?"),
+          "h · Idle timeout: ", h("strong", { style: { color: "#e6edf3" } }, (config && config.IDLE_TIMEOUT_MINUTES) || "?"),
+          "m · Types: ", h("strong", { style: { color: "#e6edf3" } }, ((config && config.ENABLED_TYPES) || []).join(", ")),
         ),
         h("span", { style: { fontSize: "0.7rem", color: "#6e7681" } }, "Read-only — edit in Config tab"),
+      ),
+
+      // Surprisal status line
+      h("div", { style: { marginTop: 6, marginBottom: 8, fontSize: "0.78rem", color: "#8b949e" } },
+        "🎯 Surprisal: ",
+        h("strong", { style: { color: (config && config.SURPRISAL && config.SURPRISAL.ENABLED) ? "#2ea043" : "#6e7681" } },
+          (config && config.SURPRISAL && config.SURPRISAL.ENABLED) ? "Enabled" : "Disabled"
+        ),
+        (config && config.SURPRISAL && config.SURPRISAL.ENABLED) ? h("span", null,
+          " · Tree: ", h("strong", { style: { color: "#e6edf3" } }, (config.SURPRISAL.TREE_TYPE || "?")),
+          " (k=", h("strong", { style: { color: "#e6edf3" } }, (config.SURPRISAL.TREE_K || "?")), ")",
+          " · Strategy: ", h("strong", { style: { color: "#e6edf3" } }, (config.SURPRISAL.SAMPLING_STRATEGY || "?")),
+          " · Sample: ", h("strong", { style: { color: "#e6edf3" } }, (config.SURPRISAL.SAMPLE_SIZE || "?")),
+          " · Top: ", h("strong", { style: { color: "#e6edf3" } }, ((config.SURPRISAL.TOP_PERCENT_SURPRISAL || 0) * 100), "%"),
+        ) : null
       ),
 
       h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }},
@@ -1704,6 +1719,17 @@
       );
     }
 
+    function renderSelect(label, path, isWorkspace, options, description) {
+      var val = getNested(config && config.configuration, path) || "";
+      return h("div", {style: {marginBottom: 14}},
+        h("div", {style: {fontWeight: 600, fontSize: "0.88em", marginBottom: 4}}, label),
+        description ? h("div", {style: {fontSize: "0.75em", color: "#8b949e", marginBottom: 6}}, description) : null,
+        h("select", {value: val, onChange: function (e) { updateWorkspaceField(path, e.target.value); }, style: Object.assign({}, S.input, {minWidth: 180})},
+          options.map(function (opt) { return h("option", {key: opt, value: opt}, opt); })
+        )
+      );
+    }
+
     function renderModelCard(title, icon, modelCfg) {
       if (!modelCfg) return null;
       return h("div", {style: {marginBottom: 10, padding: "10px 12px", background: "rgba(13, 17, 23, 0.7)", border: "1px solid #21262d", borderRadius: 0}},
@@ -1836,7 +1862,20 @@
             renderNumber("Document threshold", "dream.DOCUMENT_THRESHOLD", false, null, 10, 1000),
             renderNumber("Idle timeout (min)", "dream.IDLE_TIMEOUT_MINUTES", false, null, 5, 480),
             renderNumber("Min hours between", "dream.MIN_HOURS_BETWEEN_DREAMS", false, null, 1, 72),
-            renderNumber("Max tool iterations", "dream.MAX_TOOL_ITERATIONS", false, null, 1, 50)
+            renderNumber("Max tool iterations", "dream.MAX_TOOL_ITERATIONS", false, null, 1, 50),
+
+            // --- Surprisal sub-section ---
+            h("div", {style: {marginTop: 12, borderTop: "1px solid #21262d", paddingTop: 10}},
+              h("div", {style: {fontSize: "0.85em", fontWeight: 600, color: "#8b949e", marginBottom: 8}}, "🎯 Surprisal"),
+              renderToggle("Surprisal enabled", "dream.SURPRISAL.ENABLED", false),
+              renderSelect("Tree type", "dream.SURPRISAL.TREE_TYPE", false, ["kdtree", "balltree", "rptree", "covertree", "lsh", "graph", "prototype"]),
+              renderNumber("Tree K (kNN)", "dream.SURPRISAL.TREE_K", false, null, 1, 20),
+              renderSelect("Sampling strategy", "dream.SURPRISAL.SAMPLING_STRATEGY", false, ["recent", "random", "all"]),
+              renderNumber("Sample size", "dream.SURPRISAL.SAMPLE_SIZE", false, null, 1, 2000),
+              renderNumber("Top percent surprisal", "dream.SURPRISAL.TOP_PERCENT_SURPRISAL", false, null, 0, 1),
+              renderNumber("Min high-surprisal to replace", "dream.SURPRISAL.MIN_HIGH_SURPRISAL_FOR_REPLACE", false, null, 0, 100),
+              renderTextarea("Include levels (comma-separated)", "dream.SURPRISAL.INCLUDE_LEVELS", false)
+            )
           )
         ),
 

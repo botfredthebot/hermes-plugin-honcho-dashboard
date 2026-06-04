@@ -37,7 +37,7 @@ class TestDreamsConfig:
     def test_get_config_returns_200(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='{"ENABLED": true, "DOCUMENT_THRESHOLD": 50, "IDLE_TIMEOUT_MINUTES": 60, "MIN_HOURS_BETWEEN_DREAMS": 8, "ENABLED_TYPES": ["omni"]}',
+            stdout='{"ENABLED": true, "DOCUMENT_THRESHOLD": 50, "IDLE_TIMEOUT_MINUTES": 60, "MIN_HOURS_BETWEEN_DREAMS": 8, "ENABLED_TYPES": ["omni"], "SURPRISAL": {"ENABLED": false, "TREE_TYPE": "kdtree", "TREE_K": 5, "SAMPLING_STRATEGY": "recent", "SAMPLE_SIZE": 200, "TOP_PERCENT_SURPRISAL": 0.1, "MIN_HIGH_SURPRISAL_FOR_REPLACE": 10, "INCLUDE_LEVELS": ["explicit", "deductive"]}}',
             stderr=""
         )
         resp = client.get(f"{API_PREFIX}/dreams/config")
@@ -47,7 +47,7 @@ class TestDreamsConfig:
     def test_get_config_returns_expected_fields(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='{"ENABLED": true, "DOCUMENT_THRESHOLD": 50, "IDLE_TIMEOUT_MINUTES": 60, "MIN_HOURS_BETWEEN_DREAMS": 8, "ENABLED_TYPES": ["omni"]}',
+            stdout='{"ENABLED": true, "DOCUMENT_THRESHOLD": 50, "IDLE_TIMEOUT_MINUTES": 60, "MIN_HOURS_BETWEEN_DREAMS": 8, "ENABLED_TYPES": ["omni"], "SURPRISAL": {"ENABLED": false, "TREE_TYPE": "kdtree", "TREE_K": 5, "SAMPLING_STRATEGY": "recent", "SAMPLE_SIZE": 200, "TOP_PERCENT_SURPRISAL": 0.1, "MIN_HIGH_SURPRISAL_FOR_REPLACE": 10, "INCLUDE_LEVELS": ["explicit", "deductive"]}}',
             stderr=""
         )
         resp = client.get(f"{API_PREFIX}/dreams/config")
@@ -57,12 +57,22 @@ class TestDreamsConfig:
         assert "IDLE_TIMEOUT_MINUTES" in data
         assert "MIN_HOURS_BETWEEN_DREAMS" in data
         assert "ENABLED_TYPES" in data
+        assert "SURPRISAL" in data
+        surp = data["SURPRISAL"]
+        assert "ENABLED" in surp
+        assert "TREE_TYPE" in surp
+        assert "TREE_K" in surp
+        assert "SAMPLING_STRATEGY" in surp
+        assert "SAMPLE_SIZE" in surp
+        assert "TOP_PERCENT_SURPRISAL" in surp
+        assert "MIN_HIGH_SURPRISAL_FOR_REPLACE" in surp
+        assert "INCLUDE_LEVELS" in surp
 
     @patch("subprocess.run")
     def test_get_config_disabled(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='{"ENABLED": false, "DOCUMENT_THRESHOLD": 50, "IDLE_TIMEOUT_MINUTES": 60, "MIN_HOURS_BETWEEN_DREAMS": 8, "ENABLED_TYPES": ["omni"]}',
+            stdout='{"ENABLED": false, "DOCUMENT_THRESHOLD": 50, "IDLE_TIMEOUT_MINUTES": 60, "MIN_HOURS_BETWEEN_DREAMS": 8, "ENABLED_TYPES": ["omni"], "SURPRISAL": {"ENABLED": false, "TREE_TYPE": "kdtree", "TREE_K": 5, "SAMPLING_STRATEGY": "recent", "SAMPLE_SIZE": 200, "TOP_PERCENT_SURPRISAL": 0.1, "MIN_HIGH_SURPRISAL_FOR_REPLACE": 10, "INCLUDE_LEVELS": ["explicit", "deductive"]}}',
             stderr=""
         )
         resp = client.get(f"{API_PREFIX}/dreams/config")

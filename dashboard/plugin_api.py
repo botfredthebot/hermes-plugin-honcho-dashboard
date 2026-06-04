@@ -26,6 +26,22 @@ HONCHO_BASE = "http://localhost:8000"
 WORKSPACE = "hermes-botfred"
 
 
+def honcho_get(path: str) -> dict:
+    """GET from Honcho API."""
+    req = urllib.request.Request(
+        f"{HONCHO_BASE}{path}",
+        headers={"Content-Type": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=e.code, detail=e.read().decode()[:500])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 def honcho_post(path: str, body: Any = None) -> dict:
     """POST to Honcho API."""
     data = json.dumps(body or {}).encode()
@@ -258,9 +274,8 @@ async def list_peers():
 @router.get("/peer/{peerId}/card")
 async def get_peer_card(peerId: str):
     """Get the peer card for a specific peer from Honcho."""
-    # Fetch the peer card from Honcho's dedicated endpoint
-    body = {"peer_id": peerId}
-    card = honcho_post(f"/v3/workspaces/{WORKSPACE}/peers/{peerId}/card", body)
+    # Fetch the peer card from Honcho's dedicated endpoint (GET, not POST)
+    card = honcho_get(f"/v3/workspaces/{WORKSPACE}/peers/{peerId}/card")
     return card
 
 
@@ -986,7 +1001,17 @@ async def dreams_config():
              "'DOCUMENT_THRESHOLD': settings.DREAM.DOCUMENT_THRESHOLD, "
              "'IDLE_TIMEOUT_MINUTES': settings.DREAM.IDLE_TIMEOUT_MINUTES, "
              "'MIN_HOURS_BETWEEN_DREAMS': settings.DREAM.MIN_HOURS_BETWEEN_DREAMS, "
-             "'ENABLED_TYPES': settings.DREAM.ENABLED_TYPES}))"],
+             "'ENABLED_TYPES': settings.DREAM.ENABLED_TYPES, "
+             "'SURPRISAL': {"
+             "'ENABLED': settings.DREAM.SURPRISAL.ENABLED, "
+             "'TREE_TYPE': settings.DREAM.SURPRISAL.TREE_TYPE, "
+             "'TREE_K': settings.DREAM.SURPRISAL.TREE_K, "
+             "'SAMPLING_STRATEGY': settings.DREAM.SURPRISAL.SAMPLING_STRATEGY, "
+             "'SAMPLE_SIZE': settings.DREAM.SURPRISAL.SAMPLE_SIZE, "
+             "'TOP_PERCENT_SURPRISAL': settings.DREAM.SURPRISAL.TOP_PERCENT_SURPRISAL, "
+             "'MIN_HIGH_SURPRISAL_FOR_REPLACE': settings.DREAM.SURPRISAL.MIN_HIGH_SURPRISAL_FOR_REPLACE, "
+             "'INCLUDE_LEVELS': settings.DREAM.SURPRISAL.INCLUDE_LEVELS"
+             "}}))"],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode != 0:
