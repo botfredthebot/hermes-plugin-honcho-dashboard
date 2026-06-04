@@ -1503,7 +1503,7 @@
             style: Object.assign({}, S.input, { flex: 1, minWidth: 200 }),
           }),
           h("button", { onClick: selectAll, style: S.btn }, "Select All"),
-          h("button", { onClick: deselectAll, style: S.btn }, "Deselect None"),
+          h("button", { onClick: deselectAll, style: S.btn }, "Select None"),
           h("label", { style: { display: "flex", alignItems: "center", gap: 4, fontSize: "0.78em", color: "#8b949e" } },
             h("input", { type: "checkbox", checked: dryRun, onChange: function (e) { setDryRun(e.target.checked); } }),
             "Dry run"

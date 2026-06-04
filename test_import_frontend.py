@@ -184,12 +184,12 @@ class TestImportSessionList:
         btn = page.query_selector("text=Select All")
         assert btn is not None, "Select All button not found"
 
-    def test_deselect_all_button_exists(self, page):
-        """Deselect None button should be present."""
+    def test_select_none_button_exists(self, page):
+        """Select None button should be present."""
         navigate_to_import_tab(page)
         page.wait_for_timeout(2_000)
-        btn = page.query_selector("text=Deselect None")
-        assert btn is not None, "Deselect None button not found"
+        btn = page.query_selector("text=Select None")
+        assert btn is not None, "Select None button not found"
 
     def test_filter_input_exists(self, page):
         """Filter input should be present."""
