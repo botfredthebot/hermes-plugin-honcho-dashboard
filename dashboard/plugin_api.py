@@ -1597,12 +1597,11 @@ async def update_global_config(body: dict):
                 # Field doesn't exist in section, add it
                 toml_content = toml_content[:section_end] + f"{field} = {toml_val}\n" + toml_content[section_end:]
 
-    # Write updated TOML back
-    # Use a temp file approach
+    # Write updated TOML back (use root to bypass permission issues)
     import base64
     encoded = base64.b64encode(toml_content.encode()).decode()
     result = subprocess.run(
-        ["docker", "exec", "honcho-api-1", "bash", "-c",
+        ["docker", "exec", "--user", "root", "honcho-api-1", "bash", "-c",
          f"echo '{encoded}' | base64 -d > /app/config.toml"],
         capture_output=True, text=True, timeout=10
     )
